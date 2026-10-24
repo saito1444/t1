@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Wake & Focus - Auto Auth Controller</title>
+  <title>Wake & Focus - Closed-Loop Spotify Controller</title>
   
   <!-- MediaPipe Face Mesh & Camera CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -196,7 +196,7 @@
 
   <div class="app-header">
     <div class="app-title">WAKE & FOCUS</div>
-    <div class="badge">Auto Auth</div>
+    <div class="badge">PKCE Auth</div>
   </div>
 
   <div class="tab-container">
@@ -283,27 +283,96 @@
     </div>
   </div>
 
+  <!-- PKCE連携ボタン -->
   <button id="authBtn" class="btn-main btn-auth" onclick="loginSpotify()">🟢 Spotifyアカウントと連携する</button>
   <button id="mainBtn" class="btn-main" onclick="toggleRun()">監視セッションを開始</button>
   <button id="stopMusicBtn" class="btn-stop" onclick="stopAudioAndReset()">音楽を停止して待機に戻す</button>
 
   <script>
-    // 提示された画面のClient IDを反映済み
     const CLIENT_ID = '849d2361f9e144c58d7397136189979d';
+    // 現在のアクセスURL（GitHub Pages）をリダイレクトURIとして自動生成
     const REDIRECT_URI = window.location.origin + window.location.pathname;
 
     let SPOTIFY_TOKEN = null;
 
-    // --- 自動認証・トークン抽出処理 ---
-    function checkTokenFromUrl() {
-      const hash = window.location.hash.substring(1);
-      const params = new URLSearchParams(hash);
-      const token = params.get('access_token');
-      if (token) {
-        SPOTIFY_TOKEN = token;
-        sessionStorage.setItem('spotify_token', token);
-        // URLのハッシュをクリーンアップ
-        window.history.replaceState(null, null, window.location.pathname);
+    // --- PKCE暗号化ヘルパー ---
+    function generateRandomString(length) {
+      let text = '';
+      const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      for (let i = 0; i < length; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+      }
+      return text;
+    }
+
+    async function generateCodeChallenge(codeVerifier) {
+      const data = new TextEncoder().encode(codeVerifier);
+      const digest = await window.crypto.subtle.digest('SHA-256', data);
+      return btoa(String.fromCharCode.apply(null, [...new Uint8Array(digest)]))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+    }
+
+    // --- PKCEログイン処理 ---
+    async function loginSpotify() {
+      const verifier = generateRandomString(128);
+      const challenge = await generateCodeChallenge(verifier);
+      localStorage.setItem('spotify_code_verifier', verifier);
+
+      const scopes = 'user-modify-playback-state user-read-recently-played';
+      const params = new URLSearchParams({
+        client_id: CLIENT_ID,
+        response_type: 'code',
+        redirect_uri: REDIRECT_URI,
+        scope: scopes,
+        code_challenge_method: 'S256',
+        code_challenge: challenge
+      });
+
+      window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
+    }
+
+    // --- 戻り時のトークン交換処理 ---
+    async function checkTokenFromUrl() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const verifier = localStorage.getItem('spotify_code_verifier');
+
+      if (code && verifier) {
+        document.getElementById('apiStatus').innerText = 'トークン発行通信中...';
+        try {
+          const body = new URLSearchParams({
+            client_id: CLIENT_ID,
+            grant_type: 'authorization_code',
+            code: code,
+            redirect_uri: REDIRECT_URI,
+            code_verifier: verifier
+          });
+
+          const response = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body
+          });
+
+          if (!response.ok) {
+            const errJson = await response.json();
+            throw new Error(errJson.error_description || 'トークン交換エラー');
+          }
+
+          const data = await response.json();
+          SPOTIFY_TOKEN = data.access_token;
+          sessionStorage.setItem('spotify_token', SPOTIFY_TOKEN);
+          localStorage.removeItem('spotify_code_verifier');
+
+          // URLの "?code=..." を除去
+          window.history.replaceState(null, null, window.location.pathname);
+        } catch (e) {
+          console.error(e);
+          document.getElementById('apiStatus').innerText = '認証交換失敗';
+          document.getElementById('apiStatus').style.color = '#ef4444';
+        }
       } else {
         SPOTIFY_TOKEN = sessionStorage.getItem('spotify_token');
       }
@@ -319,12 +388,6 @@
         authText.className = 'val-warn';
         authBtn.style.display = 'block';
       }
-    }
-
-    function loginSpotify() {
-      const scopes = 'user-modify-playback-state user-read-recently-played';
-      const authUrl = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(scopes)}`;
-      window.location.href = authUrl;
     }
 
     // 閾値設定
@@ -348,7 +411,7 @@
     let micStream = null;
     let audioDataArray = null;
 
-    // クローズドループ学習ロジック
+    // クローズドループ学習
     const LEARNING_KEY = 'wake_learning_weights_v1';
     
     function getGenreWeights() {
@@ -754,6 +817,7 @@
       document.getElementById('apiStatus').style.color = '#a7a7a7';
     }
 
+    // 起動時にPKCE認証コードを交換処理
     checkTokenFromUrl();
     getBestSeedGenres();
   </script>
