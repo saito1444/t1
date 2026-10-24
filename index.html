@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>覚醒・うたた寝コントローラー</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1115;
+      color: #fff;
+      padding: 24px 16px;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 90vh;
+    }
+    h2 { margin-bottom: 20px; font-size: 20px; letter-spacing: 0.05em; }
+    .mode-container {
+      display: flex;
+      width: 100%;
+      max-width: 360px;
+      background: #1a1d24;
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 24px;
+    }
+    .mode-btn {
+      flex: 1;
+      padding: 12px 8px;
+      border: none;
+      background: transparent;
+      color: #717684;
+      font-weight: bold;
+      font-size: 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .mode-btn.active {
+      background: #2563eb;
+      color: #ffffff;
+    }
+    .action-btn {
+      width: 100%;
+      max-width: 360px;
+      padding: 18px;
+      border-radius: 12px;
+      border: none;
+      background: #10b981;
+      color: #fff;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+    }
+    .card {
+      width: 100%;
+      max-width: 360px;
+      box-sizing: border-box;
+      background: #1a1d24;
+      border: 1px solid #2d3139;
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 20px;
+    }
+    .status-text {
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #60a5fa;
+      white-space: pre-line;
+    }
+    .triggered-attack {
+      background: #450a0a !important;
+      border-color: #ef4444 !important;
+      animation: flash 0.5s infinite alternate;
+    }
+    .triggered-wake {
+      background: #064e3b !important;
+      border-color: #10b981 !important;
+    }
+    @keyframes flash {
+      from { opacity: 0.8; }
+      to { opacity: 1; }
+    }
+    .reset-btn {
+      margin-top: 16px;
+      background: #374151;
+      color: #d1d5db;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>覚醒・うたた寝コントローラー</h2>
+
+  <div class="mode-container">
+    <button id="btnNod" class="mode-btn active" onclick="setMode('nod_off')">① うたた寝迎撃</button>
+    <button id="btnMorning" class="mode-btn" onclick="setMode('morning')">② 朝の覚醒</button>
+  </div>
+
+  <button id="startBtn" class="action-btn" onclick="initSensors()">監視スタート（センサー許可）</button>
+
+  <div id="monitorCard" class="card">
+    <div id="cardTitle" style="font-weight: bold; margin-bottom: 8px; font-size: 15px;">待機中</div>
+    <div id="statusText" class="status-text">上の「監視スタート」ボタンを押してください。</div>
+  </div>
+
+  <button id="resetBtn" class="reset-btn" onclick="resetState()">音を止めてリセット</button>
+
+  <script>
+    let mode = 'nod_off';
+    let isRunning = false;
+    let isTriggered = false;
+    let audioCtx = null;
+    let activeOscillators = [];
+    let gainNode = null;
+
+    function setMode(newMode) {
+      if (isRunning && isTriggered) resetState();
+      mode = newMode;
+      document.getElementById('btnNod').classList.toggle('active', mode === 'nod_off');
+      document.getElementById('btnMorning').classList.toggle('active', mode === 'morning');
+      updateDisplay();
+    }
+
+    function updateDisplay() {
+      const title = document.getElementById('cardTitle');
+      const text = document.getElementById('statusText');
+      if (!isRunning) return;
+
+      if (mode === 'nod_off') {
+        title.innerText = 'うたた寝監視モード (傾き検知)';
+        text.innerText = '端末を持ったまま姿勢を保ってください。\n手がガクッと前に倒れると即座に迎撃音が鳴ります。';
+      } else {
+        title.innerText = '朝の覚醒監視モード (寝返り検知)';
+        text.innerText = '端末を机やベッドに平置きしてください。\n揺れ（寝返り）を検知すると穏やかな和音がフェードインします。';
+      }
+    }
+
+    // AudioContextの初期化（iOS制限対策としてユーザー操作時に実行）
+    function initAudio() {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AudioContext();
+    }
+
+    // センサーの初期化とiOS許可ダイアログ
+    async function initSensors() {
+      initAudio();
+
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const res = await DeviceOrientationEvent.requestPermission();
+          if (res !== 'granted') {
+            alert('センサー利用が拒否されました');
+            return;
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      document.getElementById('startBtn').style.display = 'none';
+      isRunning = true;
+      updateDisplay();
+      startListening();
+    }
+
+    function startListening() {
+      // 1. 傾き検知（うたた寝用）
+      window.addEventListener('deviceorientation', (e) => {
+        if (!isRunning || isTriggered || mode !== 'nod_off') return;
+        const pitch = Math.round(e.beta || 0);
+        document.getElementById('statusText').innerText = `現在の傾き: ${pitch}°\n※45°以上前に倒れると迎撃発動`;
+
+        // 手がガクッと前に倒れた角度（うたた寝動作）
+        if (pitch > 45 || pitch < -25) {
+          triggerAttack();
+        }
+      });
+
+      // 2. 揺れ検知（寝返り用）
+      window.addEventListener('devicemotion', (e) => {
+        if (!isRunning || isTriggered || mode !== 'morning') return;
+        const acc = e.acceleration;
+        const move = (Math.abs(acc.x || 0) + Math.abs(acc.y || 0) + Math.abs(acc.z || 0)).toFixed(1);
+        document.getElementById('statusText').innerText = `検知揺れ量: ${move} G\n※2.2G以上の振動でフェードイン`;
+
+        // 一定以上の振動（寝返り動作）
+        if (move > 2.2) {
+          triggerMorningFadeIn();
+        }
+      });
+    }
+
+    // 【うたた寝迎撃】けたたましい警報サイレン音
+    function triggerAttack() {
+      isTriggered = true;
+      const card = document.getElementById('monitorCard');
+      card.className = 'card triggered-attack';
+      document.getElementById('cardTitle').innerText = '⚠ うたた寝を検知！即時覚醒 ⚠';
+      document.getElementById('statusText').innerText = '頭・手の急激な傾きを検知しました。\n最大音量で警告アラートを作動中。';
+      document.getElementById('resetBtn').style.display = 'block';
+
+      const osc = audioCtx.createOscillator();
+      gainNode = audioCtx.createGain();
+
+      osc.type = 'sawtooth';
+      gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime); // 大音量
+
+      // 周波数を上下させてサイレン音を作る
+      osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+      const now = audioCtx.currentTime;
+      for (let i = 0; i < 20; i++) {
+        osc.frequency.setValueAtTime(900, now + i * 0.3);
+        osc.frequency.setValueAtTime(450, now + i * 0.3 + 0.15);
+      }
+
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      osc.start();
+      activeOscillators.push(osc);
+    }
+
+    // 【朝の覚醒】徐々に大きくなる和音フェードイン
+    function triggerMorningFadeIn() {
+      isTriggered = true;
+      const card = document.getElementById('monitorCard');
+      card.className = 'card triggered-wake';
+      document.getElementById('cardTitle').innerText = '☀ 覚醒フェーズ（寝返り検知）';
+      document.getElementById('statusText').innerText = '身体の動きを検知しました。\n心地よいアンビエント和音をフェードイン再生中…';
+      document.getElementById('resetBtn').style.display = 'block';
+
+      gainNode = audioCtx.createGain();
+      gainNode.gain.setValueAtTime(0.01, audioCtx.currentTime);
+      // 10秒かけて徐々に音量を上げる
+      gainNode.gain.exponentialRampToValueAtTime(0.6, audioCtx.currentTime + 10);
+      gainNode.connect(audioCtx.destination);
+
+      // 爽やかな和音（Cメジャー9th: C4, E4, G4, B4, D5）
+      const freqs = [261.63, 329.63, 392.00, 493.88, 587.33];
+      freqs.forEach(f => {
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(f, audioCtx.currentTime);
+        osc.connect(gainNode);
+        osc.start();
+        activeOscillators.push(osc);
+      });
+    }
+
+    function resetState() {
+      activeOscillators.forEach(osc => {
+        try { osc.stop(); } catch(e){}
+      });
+      activeOscillators = [];
+      isTriggered = false;
+      document.getElementById('monitorCard').className = 'card';
+      document.getElementById('resetBtn').style.display = 'none';
+      updateDisplay();
+    }
+  </script>
+</body>
+</html>
