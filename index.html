@@ -196,7 +196,7 @@
 
   <div class="app-header">
     <div class="app-title">WAKE & FOCUS</div>
-    <div class="badge">PKCE Auth</div>
+    <div class="badge">PKCE Auto-Device</div>
   </div>
 
   <div class="tab-container">
@@ -283,14 +283,12 @@
     </div>
   </div>
 
-  <!-- PKCE連携ボタン -->
   <button id="authBtn" class="btn-main btn-auth" onclick="loginSpotify()">🟢 Spotifyアカウントと連携する</button>
   <button id="mainBtn" class="btn-main" onclick="toggleRun()">監視セッションを開始</button>
   <button id="stopMusicBtn" class="btn-stop" onclick="stopAudioAndReset()">音楽を停止して待機に戻す</button>
 
   <script>
     const CLIENT_ID = '849d2361f9e144c58d7397136189979d';
-    // 現在のアクセスURL（GitHub Pages）をリダイレクトURIとして自動生成
     const REDIRECT_URI = window.location.origin + window.location.pathname;
 
     let SPOTIFY_TOKEN = null;
@@ -314,13 +312,12 @@
         .replace(/=+$/, '');
     }
 
-    // --- PKCEログイン処理 ---
     async function loginSpotify() {
       const verifier = generateRandomString(128);
       const challenge = await generateCodeChallenge(verifier);
       localStorage.setItem('spotify_code_verifier', verifier);
 
-      const scopes = 'user-modify-playback-state user-read-recently-played';
+      const scopes = 'user-modify-playback-state user-read-playback-state user-read-recently-played';
       const params = new URLSearchParams({
         client_id: CLIENT_ID,
         response_type: 'code',
@@ -333,7 +330,6 @@
       window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
     }
 
-    // --- 戻り時のトークン交換処理 ---
     async function checkTokenFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
@@ -366,7 +362,6 @@
           sessionStorage.setItem('spotify_token', SPOTIFY_TOKEN);
           localStorage.removeItem('spotify_code_verifier');
 
-          // URLの "?code=..." を除去
           window.history.replaceState(null, null, window.location.pathname);
         } catch (e) {
           console.error(e);
@@ -390,7 +385,46 @@
       }
     }
 
-    // 閾値設定
+    // --- デバイス自動探索（404エラー対策） ---
+    async function getAvailableDeviceId() {
+      try {
+        const res = await fetch('https://api.spotify.com/v1/me/player/devices', {
+          headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data.devices || data.devices.length === 0) return null;
+        
+        const activeDev = data.devices.find(d => d.is_active) || data.devices[0];
+        return activeDev.id;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function executePlay(trackUri) {
+      const devId = await getAvailableDeviceId();
+      const playUrl = devId 
+        ? `https://api.spotify.com/v1/me/player/play?device_id=${devId}`
+        : 'https://api.spotify.com/v1/me/player/play';
+
+      const res = await fetch(playUrl, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${SPOTIFY_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ uris: [trackUri] })
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error('端末が見つかりません。Spotifyアプリで1曲再生待機してください');
+        }
+        throw new Error(`API エラー: ${res.status}`);
+      }
+    }
+
     const AUDIO_SPIKE_THRESHOLD = 38;
     const MOTION_SPIKE_THRESHOLD = 1.6;
 
@@ -411,7 +445,6 @@
     let micStream = null;
     let audioDataArray = null;
 
-    // クローズドループ学習
     const LEARNING_KEY = 'wake_learning_weights_v1';
     
     function getGenreWeights() {
@@ -521,17 +554,21 @@
     }
 
     async function setVolume(percent) {
-      await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${percent}`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
-      });
+      try {
+        await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${percent}`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
+        });
+      } catch(e){}
     }
 
     async function pausePlayback() {
-      await fetch('https://api.spotify.com/v1/me/player/pause', {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
-      });
+      try {
+        await fetch('https://api.spotify.com/v1/me/player/pause', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
+        });
+      } catch(e){}
     }
 
     function showPlayerCard(track) {
@@ -554,11 +591,7 @@
         const peakSeekMs = await getPeakSectionMs(track.id);
         await setVolume(100);
 
-        await fetch('https://api.spotify.com/v1/me/player/play', {
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ uris: [track.uri] })
-        });
+        await executePlay(track.uri);
 
         if (peakSeekMs > 0) {
           await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${peakSeekMs}`, {
@@ -585,11 +618,7 @@
         activePlayingTrackId = track.id;
         await setVolume(0);
 
-        await fetch('https://api.spotify.com/v1/me/player/play', {
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ uris: [track.uri] })
-        });
+        await executePlay(track.uri);
 
         triggerTimestamp = performance.now();
 
@@ -789,7 +818,7 @@
     }
 
     async function stopAudioAndReset() {
-      try { await pausePlayback(); } catch(e){}
+      await pausePlayback();
       isTriggered = false;
       isRunning = false;
       clearInterval(timerInterval);
@@ -817,7 +846,6 @@
       document.getElementById('apiStatus').style.color = '#a7a7a7';
     }
 
-    // 起動時にPKCE認証コードを交換処理
     checkTokenFromUrl();
     getBestSeedGenres();
   </script>
