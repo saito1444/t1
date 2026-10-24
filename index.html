@@ -2,271 +2,760 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>覚醒・うたた寝コントローラー</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Wake & Focus - Auto Auth Controller</title>
+  
+  <!-- MediaPipe Face Mesh & Camera CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
   <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1115;
-      color: #fff;
-      padding: 24px 16px;
       margin: 0;
+      padding: 16px;
+      background: #0f1012;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       display: flex;
       flex-direction: column;
       align-items: center;
-      min-height: 90vh;
+      min-height: 100vh;
     }
-    h2 { margin-bottom: 20px; font-size: 20px; letter-spacing: 0.05em; }
-    .mode-container {
+    
+    .app-header {
+      width: 100%;
+      max-width: 360px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .app-title { font-size: 18px; font-weight: 800; color: #1db954; letter-spacing: 0.05em; }
+    .badge { font-size: 11px; background: #22252a; padding: 4px 8px; border-radius: 20px; color: #9ca3af; }
+
+    .tab-container {
       display: flex;
       width: 100%;
       max-width: 360px;
       background: #1a1d24;
       border-radius: 12px;
       padding: 4px;
-      margin-bottom: 24px;
+      margin-bottom: 12px;
+      border: 1px solid #282c35;
     }
-    .mode-btn {
+    .tab-btn {
       flex: 1;
-      padding: 12px 8px;
+      padding: 9px;
       border: none;
       background: transparent;
-      color: #717684;
-      font-weight: bold;
-      font-size: 14px;
+      color: #9ca3af;
+      font-weight: 700;
+      font-size: 12px;
       border-radius: 8px;
       cursor: pointer;
       transition: all 0.2s;
     }
-    .mode-btn.active {
-      background: #2563eb;
-      color: #ffffff;
+    .tab-btn.active {
+      background: #1db954;
+      color: #0b0c0e;
     }
-    .action-btn {
+
+    .config-card {
       width: 100%;
       max-width: 360px;
-      padding: 18px;
-      border-radius: 12px;
-      border: none;
-      background: #10b981;
+      background: #181b22;
+      border: 1px solid #262a34;
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    .config-title { font-size: 11px; font-weight: 700; color: #9ca3af; margin-bottom: 6px; text-transform: uppercase; }
+    .config-row { display: flex; justify-content: space-between; align-items: center; }
+    input[type="time"], select {
+      background: #252a36;
+      border: 1px solid #3b4252;
       color: #fff;
-      font-size: 16px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 13px;
       font-weight: bold;
-      cursor: pointer;
-      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+      outline: none;
     }
-    .card {
+
+    .viewport-card {
+      position: relative;
       width: 100%;
       max-width: 360px;
-      box-sizing: border-box;
-      background: #1a1d24;
-      border: 1px solid #2d3139;
-      border-radius: 12px;
-      padding: 16px;
-      margin-top: 20px;
+      height: 190px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #16181f;
+      border: 1px solid #282c35;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
     }
-    .status-text {
-      font-family: monospace;
-      font-size: 14px;
-      line-height: 1.6;
-      color: #60a5fa;
-      white-space: pre-line;
+    video, canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
     }
-    .triggered-attack {
-      background: #450a0a !important;
-      border-color: #ef4444 !important;
-      animation: flash 0.5s infinite alternate;
-    }
-    .triggered-wake {
-      background: #064e3b !important;
-      border-color: #10b981 !important;
-    }
-    @keyframes flash {
-      from { opacity: 0.8; }
-      to { opacity: 1; }
-    }
-    .reset-btn {
-      margin-top: 16px;
-      background: #374151;
-      color: #d1d5db;
-      border: none;
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-size: 14px;
-      cursor: pointer;
+
+    .player-overlay {
       display: none;
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(10, 12, 16, 0.94);
+      backdrop-filter: blur(8px);
+      z-index: 10;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      text-align: center;
+    }
+    .album-art {
+      width: 76px;
+      height: 76px;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      margin-bottom: 6px;
+      object-fit: cover;
+    }
+    .track-title { font-size: 13px; font-weight: 800; color: #fff; margin-bottom: 2px; }
+    .track-artist { font-size: 11px; color: #9ca3af; margin-bottom: 6px; }
+    
+    .equalizer { display: flex; align-items: flex-end; height: 12px; gap: 3px; }
+    .bar { width: 3px; background: #1db954; border-radius: 2px; animation: bounce 0.6s infinite alternate ease-in-out; }
+    .bar:nth-child(2) { animation-delay: 0.2s; }
+    .bar:nth-child(3) { animation-delay: 0.4s; }
+    .bar:nth-child(4) { animation-delay: 0.1s; }
+    @keyframes bounce { from { height: 3px; } to { height: 14px; } }
+
+    .status-panel {
+      width: 100%;
+      max-width: 360px;
+      margin-top: 10px;
+      background: #181b22;
+      border: 1px solid #262a34;
+      border-radius: 12px;
+      padding: 10px 14px;
+    }
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+    .status-item:last-child { margin-bottom: 0; }
+    .val-green { color: #1db954; font-weight: bold; }
+    .val-warn { color: #f59e0b; font-weight: bold; }
+    .val-danger { color: #ef4444; font-weight: bold; }
+
+    .btn-main {
+      width: 100%;
+      max-width: 360px;
+      padding: 13px;
+      border-radius: 50px;
+      border: none;
+      background: #1db954;
+      color: #0b0c0e;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+    .btn-auth {
+      background: #252a36;
+      border: 1px solid #1db954;
+      color: #1db954;
+      margin-bottom: 8px;
+    }
+    .btn-stop {
+      display: none;
+      width: 100%;
+      max-width: 360px;
+      padding: 12px;
+      border-radius: 50px;
+      border: 1px solid #374151;
+      background: #252a36;
+      color: #f87171;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 8px;
     }
   </style>
 </head>
 <body>
 
-  <h2>覚醒・うたた寝コントローラー</h2>
-
-  <div class="mode-container">
-    <button id="btnNod" class="mode-btn active" onclick="setMode('nod_off')">① うたた寝迎撃</button>
-    <button id="btnMorning" class="mode-btn" onclick="setMode('morning')">② 朝の覚醒</button>
+  <div class="app-header">
+    <div class="app-title">WAKE & FOCUS</div>
+    <div class="badge">Auto Auth</div>
   </div>
 
-  <button id="startBtn" class="action-btn" onclick="initSensors()">監視スタート（センサー許可）</button>
-
-  <div id="monitorCard" class="card">
-    <div id="cardTitle" style="font-weight: bold; margin-bottom: 8px; font-size: 15px;">待機中</div>
-    <div id="statusText" class="status-text">上の「監視スタート」ボタンを押してください。</div>
+  <div class="tab-container">
+    <button id="tabAttack" class="tab-btn active" onclick="switchMode('attack')">① 居眠り撃退 (視覚)</button>
+    <button id="tabWake" class="tab-btn" onclick="switchMode('wake')">② 朝の覚醒 (音＋振動)</button>
   </div>
 
-  <button id="resetBtn" class="reset-btn" onclick="resetState()">音を止めてリセット</button>
+  <div id="attackConfig" class="config-card">
+    <div class="config-title">集中継続時間の設定</div>
+    <div class="config-row">
+      <span style="font-size:12px; color:#d1d5db;">指定タイマー:</span>
+      <select id="focusDuration">
+        <option value="15">15 分間</option>
+        <option value="30">30 分間</option>
+        <option value="60" selected>1 時間 (60分)</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="wakeConfig" class="config-card" style="display:none;">
+    <div class="config-title">起床ターゲット時刻</div>
+    <div class="config-row">
+      <span style="font-size:12px; color:#d1d5db;">目標アラーム:</span>
+      <input type="time" id="targetWakeTime" value="07:00">
+    </div>
+  </div>
+
+  <div class="viewport-card">
+    <video id="inputVideo" playsinline autoplay muted></video>
+    <canvas id="outputCanvas"></canvas>
+
+    <div id="morningGuide" style="display:none; text-align:center; padding:16px;">
+      <div style="font-size:26px; margin-bottom:4px;">🌙 ➔ ☀</div>
+      <div style="font-size:12px; font-weight:bold;">ハイブリッド睡眠監視中</div>
+      <div style="font-size:11px; color:#6b7280; margin-top:2px;">振動または音響スパイクで覚醒制御</div>
+    </div>
+
+    <div id="playerOverlay" class="player-overlay">
+      <img id="trackCover" class="album-art" src="" alt="Cover">
+      <div id="trackTitle" class="track-title">曲名</div>
+      <div id="trackArtist" class="track-artist">アーティスト名</div>
+      <div class="equalizer">
+        <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-panel">
+    <div class="status-item">
+      <span>Spotify連携状態:</span>
+      <span id="authStatusText" class="val-warn">未連携（要ログイン）</span>
+    </div>
+    <div class="status-item">
+      <span>システム状態:</span>
+      <span id="sysStatus" class="val-green">スタンバイ</span>
+    </div>
+    <div class="status-item" id="primaryMetricRow">
+      <span id="metricLabel">残り集中時間:</span>
+      <span id="metricVal" class="val-green">--:--</span>
+    </div>
+    <div class="status-item" id="soundMetricRow" style="display:none;">
+      <span>周囲音量レベル:</span>
+      <span id="audioLevelVal" style="color:#9ca3af;">0 Level</span>
+    </div>
+    <div class="status-item" id="motionMetricRow" style="display:none;">
+      <span>検知加速度 (体動):</span>
+      <span id="motionLevelVal" style="color:#9ca3af;">0.0 G</span>
+    </div>
+    <div class="status-item" id="subMetricRow">
+      <span id="subMetricLabel">検知指標:</span>
+      <span id="subMetricVal" style="color:#9ca3af;">0.00</span>
+    </div>
+    <div class="status-item">
+      <span>学習済最適ジャンル:</span>
+      <span id="learnedGenre" class="val-green">--</span>
+    </div>
+    <div class="status-item">
+      <span>覚醒反応時間:</span>
+      <span id="reactionTimeVal" style="color:#a7a7a7;">-- ms</span>
+    </div>
+    <div class="status-item">
+      <span>API処理:</span>
+      <span id="apiStatus" style="color:#a7a7a7;">待機中</span>
+    </div>
+  </div>
+
+  <button id="authBtn" class="btn-main btn-auth" onclick="loginSpotify()">🟢 Spotifyアカウントと連携する</button>
+  <button id="mainBtn" class="btn-main" onclick="toggleRun()">監視セッションを開始</button>
+  <button id="stopMusicBtn" class="btn-stop" onclick="stopAudioAndReset()">音楽を停止して待機に戻す</button>
 
   <script>
-    let mode = 'nod_off';
+    // 提示された画面のClient IDを反映済み
+    const CLIENT_ID = '849d2361f9e144c58d7397136189979d';
+    const REDIRECT_URI = window.location.origin + window.location.pathname;
+
+    let SPOTIFY_TOKEN = null;
+
+    // --- 自動認証・トークン抽出処理 ---
+    function checkTokenFromUrl() {
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      const token = params.get('access_token');
+      if (token) {
+        SPOTIFY_TOKEN = token;
+        sessionStorage.setItem('spotify_token', token);
+        // URLのハッシュをクリーンアップ
+        window.history.replaceState(null, null, window.location.pathname);
+      } else {
+        SPOTIFY_TOKEN = sessionStorage.getItem('spotify_token');
+      }
+
+      const authText = document.getElementById('authStatusText');
+      const authBtn = document.getElementById('authBtn');
+      if (SPOTIFY_TOKEN) {
+        authText.innerText = '連携済み (Ready)';
+        authText.className = 'val-green';
+        authBtn.style.display = 'none';
+      } else {
+        authText.innerText = '未連携（タップして連携）';
+        authText.className = 'val-warn';
+        authBtn.style.display = 'block';
+      }
+    }
+
+    function loginSpotify() {
+      const scopes = 'user-modify-playback-state user-read-recently-played';
+      const authUrl = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(scopes)}`;
+      window.location.href = authUrl;
+    }
+
+    // 閾値設定
+    const AUDIO_SPIKE_THRESHOLD = 38;
+    const MOTION_SPIKE_THRESHOLD = 1.6;
+
+    let mode = 'attack';
     let isRunning = false;
     let isTriggered = false;
-    let audioCtx = null;
-    let activeOscillators = [];
-    let gainNode = null;
+    let timerInterval = null;
+    let sessionEndTime = null;
+    let closedStartTime = null;
+    let cameraInstance = null;
 
-    function setMode(newMode) {
-      if (isRunning && isTriggered) resetState();
-      mode = newMode;
-      document.getElementById('btnNod').classList.toggle('active', mode === 'nod_off');
-      document.getElementById('btnMorning').classList.toggle('active', mode === 'morning');
-      updateDisplay();
+    let triggerTimestamp = null;
+    let activePlayingTrackId = null;
+    let activeGenre = null;
+
+    let audioContext = null;
+    let analyser = null;
+    let micStream = null;
+    let audioDataArray = null;
+
+    // クローズドループ学習ロジック
+    const LEARNING_KEY = 'wake_learning_weights_v1';
+    
+    function getGenreWeights() {
+      const defaultWeights = { 'hard-rock': 1.0, 'metal': 1.0, 'edm': 1.0, 'punk': 1.0, 'work-out': 1.0 };
+      const raw = localStorage.getItem(LEARNING_KEY);
+      if (!raw) return defaultWeights;
+      try { return JSON.parse(raw); } catch(e) { return defaultWeights; }
     }
 
-    function updateDisplay() {
-      const title = document.getElementById('cardTitle');
-      const text = document.getElementById('statusText');
-      if (!isRunning) return;
+    function getBestSeedGenres() {
+      const weights = getGenreWeights();
+      const sorted = Object.entries(weights).sort((a, b) => b[1] - a[1]);
+      const topGenres = sorted.slice(0, 2).map(item => item[0]);
+      document.getElementById('learnedGenre').innerText = topGenres.join(', ');
+      return topGenres.join(',');
+    }
 
-      if (mode === 'nod_off') {
-        title.innerText = 'うたた寝監視モード (傾き検知)';
-        text.innerText = '端末を持ったまま姿勢を保ってください。\n手がガクッと前に倒れると即座に迎撃音が鳴ります。';
+    function recordWakeReaction() {
+      if (!triggerTimestamp || !activePlayingTrackId) return;
+      const reactionMs = Math.round(performance.now() - triggerTimestamp);
+      document.getElementById('reactionTimeVal').innerText = `${reactionMs} ms`;
+
+      const weights = getGenreWeights();
+      if (activeGenre && weights[activeGenre] !== undefined) {
+        const delta = reactionMs < 3000 ? 0.3 : -0.1;
+        weights[activeGenre] = Math.max(0.1, Number((weights[activeGenre] + delta).toFixed(2)));
+        localStorage.setItem(LEARNING_KEY, JSON.stringify(weights));
+      }
+
+      triggerTimestamp = null;
+      activePlayingTrackId = null;
+      getBestSeedGenres();
+    }
+
+    async function getRecentlyPlayedIds() {
+      try {
+        const res = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=20', {
+          headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.items.map(item => item.track.id);
+      } catch(e) { return []; }
+    }
+
+    async function getPeakSectionMs(trackId) {
+      try {
+        const res = await fetch(`https://api.spotify.com/v1/audio-analysis/${trackId}`, {
+          headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
+        });
+        if (!res.ok) return 0;
+        const data = await res.json();
+        if (!data.sections || data.sections.length === 0) return 0;
+
+        let peakSection = data.sections[0];
+        for (const s of data.sections) {
+          if (s.loudness > peakSection.loudness) peakSection = s;
+        }
+        return Math.floor(peakSection.start * 1000);
+      } catch(e) { return 0; }
+    }
+
+    function translateBioToParams(bioState) {
+      if (bioState.mode === 'attack') {
+        const seedGenres = getBestSeedGenres();
+        const targetBpm = Math.min(180, Math.max(140, Math.floor(140 + (bioState.closedSec || 0) * 10)));
+        return new URLSearchParams({
+          limit: 3,
+          seed_genres: seedGenres,
+          min_tempo: targetBpm,
+          min_energy: 0.85,
+          min_loudness: -4.0
+        });
       } else {
-        title.innerText = '朝の覚醒監視モード (寝返り検知)';
-        text.innerText = '端末を机やベッドに平置きしてください。\n揺れ（寝返り）を検知すると穏やかな和音がフェードインします。';
+        const targetBpm = Math.min(80, Math.max(60, Math.floor(65 + (bioState.motion || 0) * 5)));
+        return new URLSearchParams({
+          limit: 3,
+          seed_genres: 'acoustic,ambient,chill',
+          min_tempo: targetBpm,
+          max_tempo: 85,
+          max_energy: 0.35,
+          min_acousticness: 0.7,
+          target_valence: 0.65
+        });
       }
     }
 
-    // AudioContextの初期化（iOS制限対策としてユーザー操作時に実行）
-    function initAudio() {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      audioCtx = new AudioContext();
+    async function fetchOptimizedTrack(bioState) {
+      const params = translateBioToParams(bioState);
+      const recentIds = await getRecentlyPlayedIds();
+
+      const res = await fetch(`https://api.spotify.com/v1/recommendations?${params.toString()}`, {
+        headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
+      });
+      if (!res.ok) throw new Error(`API エラー: ${res.status}`);
+      const data = await res.json();
+      if (!data.tracks || data.tracks.length === 0) throw new Error('合致曲なし');
+
+      let picked = data.tracks.find(t => !recentIds.includes(t.id)) || data.tracks[0];
+      return {
+        id: picked.id,
+        uri: picked.uri,
+        title: picked.name,
+        artist: picked.artists.map(a => a.name).join(', '),
+        cover: picked.album.images[0]?.url || ''
+      };
     }
 
-    // センサーの初期化とiOS許可ダイアログ
-    async function initSensors() {
-      initAudio();
+    async function setVolume(percent) {
+      await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${percent}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
+      });
+    }
 
-      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-          const res = await DeviceOrientationEvent.requestPermission();
-          if (res !== 'granted') {
-            alert('センサー利用が拒否されました');
+    async function pausePlayback() {
+      await fetch('https://api.spotify.com/v1/me/player/pause', {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
+      });
+    }
+
+    function showPlayerCard(track) {
+      document.getElementById('trackCover').src = track.cover;
+      document.getElementById('trackTitle').innerText = track.title;
+      document.getElementById('trackArtist').innerText = track.artist;
+      document.getElementById('playerOverlay').style.display = 'flex';
+      document.getElementById('stopMusicBtn').style.display = 'block';
+    }
+
+    async function triggerAttackPlayback(closedSec) {
+      const statusElem = document.getElementById('apiStatus');
+      statusElem.innerText = 'サビ解析・動的抽出中...';
+      try {
+        const track = await fetchOptimizedTrack({ mode: 'attack', closedSec: closedSec });
+        showPlayerCard(track);
+        activePlayingTrackId = track.id;
+        activeGenre = getBestSeedGenres().split(',')[0];
+
+        const peakSeekMs = await getPeakSectionMs(track.id);
+        await setVolume(100);
+
+        await fetch('https://api.spotify.com/v1/me/player/play', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uris: [track.uri] })
+        });
+
+        if (peakSeekMs > 0) {
+          await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${peakSeekMs}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}` }
+          });
+        }
+
+        triggerTimestamp = performance.now();
+        statusElem.innerText = `サビ直撃再生中: ${track.title}`;
+        statusElem.style.color = '#1db954';
+      } catch (err) {
+        statusElem.innerText = err.message;
+        statusElem.style.color = '#ef4444';
+      }
+    }
+
+    async function triggerMorningPlayback(motionLevel) {
+      const statusElem = document.getElementById('apiStatus');
+      statusElem.innerText = '朝用パラメータ調律中...';
+      try {
+        const track = await fetchOptimizedTrack({ mode: 'wake', motion: motionLevel });
+        showPlayerCard(track);
+        activePlayingTrackId = track.id;
+        await setVolume(0);
+
+        await fetch('https://api.spotify.com/v1/me/player/play', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${SPOTIFY_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uris: [track.uri] })
+        });
+
+        triggerTimestamp = performance.now();
+
+        for (let vol = 10; vol <= 70; vol += 10) {
+          if (!isTriggered) break;
+          await new Promise(r => setTimeout(r, 2000));
+          await setVolume(vol);
+          statusElem.innerText = `フェードイン: ${vol}% (${track.title})`;
+          statusElem.style.color = '#1db954';
+        }
+      } catch (err) {
+        statusElem.innerText = err.message;
+        statusElem.style.color = '#ef4444';
+      }
+    }
+
+    async function handleTrigger(reason, extraVal) {
+      if (isTriggered) return;
+      isTriggered = true;
+      document.getElementById('sysStatus').innerText = `発動 (${reason})`;
+      document.getElementById('sysStatus').className = 'val-danger';
+
+      if (mode === 'attack') {
+        await triggerAttackPlayback(extraVal);
+      } else {
+        await triggerMorningPlayback(extraVal);
+      }
+    }
+
+    function switchMode(newMode) {
+      if (isRunning) stopAudioAndReset();
+      mode = newMode;
+      document.getElementById('tabAttack').classList.toggle('active', mode === 'attack');
+      document.getElementById('tabWake').classList.toggle('active', mode === 'wake');
+      
+      document.getElementById('attackConfig').style.display = mode === 'attack' ? 'block' : 'none';
+      document.getElementById('wakeConfig').style.display = mode === 'wake' ? 'block' : 'none';
+      document.getElementById('morningGuide').style.display = mode === 'wake' ? 'block' : 'none';
+      
+      if (mode === 'wake') {
+        document.getElementById('primaryMetricRow').querySelector('span:first-child').innerText = '覚醒ウィンドウ:';
+        document.getElementById('soundMetricRow').style.display = 'flex';
+        document.getElementById('motionMetricRow').style.display = 'flex';
+        document.getElementById('subMetricRow').style.display = 'none';
+      } else {
+        document.getElementById('primaryMetricRow').querySelector('span:first-child').innerText = '残り集中時間:';
+        document.getElementById('soundMetricRow').style.display = 'none';
+        document.getElementById('motionMetricRow').style.display = 'none';
+        document.getElementById('subMetricRow').style.display = 'flex';
+      }
+    }
+
+    function isWithinWakeWindow() {
+      const targetStr = document.getElementById('targetWakeTime').value;
+      const [tHour, tMin] = targetStr.split(':').map(Number);
+      const now = new Date();
+      const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), tHour, tMin, 0);
+      const diffMins = (target - now) / 60000;
+      return diffMins <= 20 && diffMins >= -5;
+    }
+
+    async function startAudioMonitoring() {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        const source = audioContext.createMediaStreamSource(micStream);
+        source.connect(analyser);
+        audioDataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        function analyzeAudio() {
+          if (!isRunning || mode !== 'wake') return;
+          analyser.getByteFrequencyData(audioDataArray);
+          let sum = 0;
+          for (let i = 0; i < audioDataArray.length; i++) sum += audioDataArray[i];
+          const avgLevel = Math.round(sum / audioDataArray.length);
+
+          document.getElementById('audioLevelVal').innerText = `${avgLevel} Level`;
+          if (isTriggered && avgLevel >= AUDIO_SPIKE_THRESHOLD) recordWakeReaction();
+
+          if (!isTriggered && isWithinWakeWindow() && avgLevel >= AUDIO_SPIKE_THRESHOLD) {
+            handleTrigger('音響スパイク検知', avgLevel);
             return;
           }
-        } catch (e) {
-          console.error(e);
+          requestAnimationFrame(analyzeAudio);
         }
+        analyzeAudio();
+      } catch (err) {
+        console.warn("マイク不許可:", err);
       }
-
-      document.getElementById('startBtn').style.display = 'none';
-      isRunning = true;
-      updateDisplay();
-      startListening();
     }
 
-    function startListening() {
-      // 1. 傾き検知（うたた寝用）
-      window.addEventListener('deviceorientation', (e) => {
-        if (!isRunning || isTriggered || mode !== 'nod_off') return;
-        const pitch = Math.round(e.beta || 0);
-        document.getElementById('statusText').innerText = `現在の傾き: ${pitch}°\n※45°以上前に倒れると迎撃発動`;
-
-        // 手がガクッと前に倒れた角度（うたた寝動作）
-        if (pitch > 45 || pitch < -25) {
-          triggerAttack();
-        }
-      });
-
-      // 2. 揺れ検知（寝返り用）
+    function setupMotionSensor() {
       window.addEventListener('devicemotion', (e) => {
-        if (!isRunning || isTriggered || mode !== 'morning') return;
+        if (mode !== 'wake' || !isRunning) return;
         const acc = e.acceleration;
         const move = (Math.abs(acc.x || 0) + Math.abs(acc.y || 0) + Math.abs(acc.z || 0)).toFixed(1);
-        document.getElementById('statusText').innerText = `検知揺れ量: ${move} G\n※2.2G以上の振動でフェードイン`;
+        document.getElementById('motionLevelVal').innerText = `${move} G`;
 
-        // 一定以上の振動（寝返り動作）
-        if (move > 2.2) {
-          triggerMorningFadeIn();
+        if (isTriggered && move >= 1.2) recordWakeReaction();
+
+        if (!isTriggered && isWithinWakeWindow() && move >= MOTION_SPIKE_THRESHOLD) {
+          handleTrigger('体動検知', parseFloat(move));
         }
       });
     }
 
-    // 【うたた寝迎撃】けたたましい警報サイレン音
-    function triggerAttack() {
-      isTriggered = true;
-      const card = document.getElementById('monitorCard');
-      card.className = 'card triggered-attack';
-      document.getElementById('cardTitle').innerText = '⚠ うたた寝を検知！即時覚醒 ⚠';
-      document.getElementById('statusText').innerText = '頭・手の急激な傾きを検知しました。\n最大音量で警告アラートを作動中。';
-      document.getElementById('resetBtn').style.display = 'block';
+    function startTimerLogic() {
+      if (mode === 'attack') {
+        const mins = parseInt(document.getElementById('focusDuration').value);
+        sessionEndTime = Date.now() + mins * 60 * 1000;
+        timerInterval = setInterval(() => {
+          const remain = Math.max(0, sessionEndTime - Date.now());
+          const m = String(Math.floor(remain / 60000)).padStart(2, '0');
+          const s = String(Math.floor((remain % 60000) / 1000)).padStart(2, '0');
+          document.getElementById('metricVal').innerText = `${m}:${s}`;
+          if (remain <= 0) {
+            stopAudioAndReset();
+            alert("集中セッション完了です。");
+          }
+        }, 1000);
+      } else {
+        timerInterval = setInterval(() => {
+          if (isWithinWakeWindow()) {
+            document.getElementById('metricVal').innerText = '起床検知中';
+            document.getElementById('metricVal').className = 'val-warn';
+          } else {
+            document.getElementById('metricVal').innerText = '時間枠外（待機中）';
+            document.getElementById('metricVal').className = 'val-green';
+          }
+        }, 1000);
+      }
+    }
 
-      const osc = audioCtx.createOscillator();
-      gainNode = audioCtx.createGain();
+    const videoElement = document.getElementById('inputVideo');
+    function calculateEAR(lm, top, bottom, left, right) {
+      const v = Math.hypot(lm[top].x - lm[bottom].x, lm[top].y - lm[bottom].y);
+      const h = Math.hypot(lm[left].x - lm[right].x, lm[left].y - lm[right].y);
+      return h === 0 ? 0 : v / h;
+    }
 
-      osc.type = 'sawtooth';
-      gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime); // 大音量
-
-      // 周波数を上下させてサイレン音を作る
-      osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-      const now = audioCtx.currentTime;
-      for (let i = 0; i < 20; i++) {
-        osc.frequency.setValueAtTime(900, now + i * 0.3);
-        osc.frequency.setValueAtTime(450, now + i * 0.3 + 0.15);
+    const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+    faceMesh.onResults((res) => {
+      if (mode !== 'attack' || !isRunning) return;
+      if (!res.multiFaceLandmarks || res.multiFaceLandmarks.length === 0) {
+        document.getElementById('subMetricVal').innerText = '顔未検出';
+        closedStartTime = null;
+        return;
       }
 
-      osc.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      osc.start();
-      activeOscillators.push(osc);
+      const lm = res.multiFaceLandmarks[0];
+      const ear = (calculateEAR(lm, 159, 145, 133, 33) + calculateEAR(lm, 386, 374, 362, 263)) / 2;
+      document.getElementById('subMetricVal').innerText = `EAR: ${ear.toFixed(2)}`;
+
+      if (isTriggered && ear >= 0.25) recordWakeReaction();
+
+      if (!isTriggered) {
+        if (ear < 0.21) {
+          if (!closedStartTime) closedStartTime = performance.now();
+          const closedSec = (performance.now() - closedStartTime) / 1000;
+          if (closedSec >= 2.0) handleTrigger('まぶた閉塞検知', closedSec);
+        } else {
+          closedStartTime = null;
+        }
+      }
+    });
+
+    async function toggleRun() {
+      if (!SPOTIFY_TOKEN) {
+        alert("まず「Spotifyアカウントと連携する」ボタンを押してください。");
+        return;
+      }
+      if (isRunning) return;
+      isRunning = true;
+      document.getElementById('mainBtn').style.display = 'none';
+      document.getElementById('sysStatus').innerText = '監視中';
+      getBestSeedGenres();
+      startTimerLogic();
+
+      if (mode === 'attack') {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+        videoElement.srcObject = stream;
+        cameraInstance = new Camera(videoElement, {
+          onFrame: async () => { if (isRunning && mode === 'attack') await faceMesh.send({ image: videoElement }); },
+          width: 640, height: 480
+        });
+        await cameraInstance.start();
+      } else {
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          try { await DeviceOrientationEvent.requestPermission(); } catch(e){}
+        }
+        setupMotionSensor();
+        await startAudioMonitoring();
+      }
     }
 
-    // 【朝の覚醒】徐々に大きくなる和音フェードイン
-    function triggerMorningFadeIn() {
-      isTriggered = true;
-      const card = document.getElementById('monitorCard');
-      card.className = 'card triggered-wake';
-      document.getElementById('cardTitle').innerText = '☀ 覚醒フェーズ（寝返り検知）';
-      document.getElementById('statusText').innerText = '身体の動きを検知しました。\n心地よいアンビエント和音をフェードイン再生中…';
-      document.getElementById('resetBtn').style.display = 'block';
-
-      gainNode = audioCtx.createGain();
-      gainNode.gain.setValueAtTime(0.01, audioCtx.currentTime);
-      // 10秒かけて徐々に音量を上げる
-      gainNode.gain.exponentialRampToValueAtTime(0.6, audioCtx.currentTime + 10);
-      gainNode.connect(audioCtx.destination);
-
-      // 爽やかな和音（Cメジャー9th: C4, E4, G4, B4, D5）
-      const freqs = [261.63, 329.63, 392.00, 493.88, 587.33];
-      freqs.forEach(f => {
-        const osc = audioCtx.createOscillator();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(f, audioCtx.currentTime);
-        osc.connect(gainNode);
-        osc.start();
-        activeOscillators.push(osc);
-      });
-    }
-
-    function resetState() {
-      activeOscillators.forEach(osc => {
-        try { osc.stop(); } catch(e){}
-      });
-      activeOscillators = [];
+    async function stopAudioAndReset() {
+      try { await pausePlayback(); } catch(e){}
       isTriggered = false;
-      document.getElementById('monitorCard').className = 'card';
-      document.getElementById('resetBtn').style.display = 'none';
-      updateDisplay();
+      isRunning = false;
+      clearInterval(timerInterval);
+      closedStartTime = null;
+      triggerTimestamp = null;
+      activePlayingTrackId = null;
+
+      if (micStream) {
+        micStream.getTracks().forEach(track => track.stop());
+        micStream = null;
+      }
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+
+      document.getElementById('playerOverlay').style.display = 'none';
+      document.getElementById('stopMusicBtn').style.display = 'none';
+      document.getElementById('mainBtn').style.display = 'block';
+      document.getElementById('sysStatus').innerText = 'スタンバイ';
+      document.getElementById('sysStatus').className = 'val-green';
+      document.getElementById('audioLevelVal').innerText = '0 Level';
+      document.getElementById('motionLevelVal').innerText = '0.0 G';
+      document.getElementById('apiStatus').innerText = '待機中';
+      document.getElementById('apiStatus').style.color = '#a7a7a7';
     }
+
+    checkTokenFromUrl();
+    getBestSeedGenres();
   </script>
 </body>
 </html>
