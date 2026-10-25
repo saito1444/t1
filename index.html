@@ -10,28 +10,29 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
   <style>
-    :root {
-      --bg-color: #07090e;
-      --card-bg: #0f141f;
-      --accent-color: #38bdf8;
-      --accent-glow: rgba(56, 189, 248, 0.25);
-      --text-main: #f1f5f9;
-      --text-sub: #94a3b8;
-      --border-color: #1e293b;
-    }
-
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body {
       margin: 0;
       padding: 14px;
-      background: var(--bg-color);
-      color: var(--text-main);
+      background: #06080e;
+      color: #f1f5f9;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
       display: flex;
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
-      transition: background 1.2s ease, filter 1.2s ease;
+      transition: background 0.8s ease;
+    }
+
+    /* AI介入時に画面全体へ適用される極端なテーマスタイル */
+    body.theme-amber {
+      background: #3b1d06 !important;
+    }
+    body.theme-cyan {
+      background: #06283d !important;
+    }
+    body.theme-emerald {
+      background: #06331e !important;
     }
 
     .header {
@@ -41,21 +42,21 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 10px;
-      border-bottom: 1px solid var(--border-color);
+      border-bottom: 1px solid #1e293b;
       padding-bottom: 8px;
     }
     .header h1 {
       font-size: 13px;
       margin: 0;
       letter-spacing: 0.08em;
-      color: var(--accent-color);
+      color: #38bdf8;
       font-weight: 800;
     }
     .badge {
       font-size: 9px;
       background: #020617;
-      border: 1px solid var(--accent-color);
-      color: var(--accent-color);
+      border: 1px solid #38bdf8;
+      color: #38bdf8;
       padding: 2px 6px;
       border-radius: 4px;
     }
@@ -68,8 +69,8 @@
       border-radius: 12px;
       overflow: hidden;
       background: #020617;
-      border: 1px solid var(--border-color);
-      box-shadow: 0 0 25px var(--accent-glow);
+      border: 2px solid #1e293b;
+      transition: border-color 0.8s ease, box-shadow 0.8s ease;
     }
     video, #outputCanvas {
       position: absolute;
@@ -82,8 +83,8 @@
     .scan-line {
       position: absolute;
       top: 0; left: 0; width: 100%; height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
-      box-shadow: 0 0 10px var(--accent-color);
+      background: linear-gradient(90deg, transparent, #38bdf8, transparent);
+      box-shadow: 0 0 10px #38bdf8;
       animation: scan 2.5s infinite linear;
       z-index: 5;
     }
@@ -96,31 +97,31 @@
 
     .target-roi {
       position: absolute;
-      top: 25%; left: 35%; width: 30%; height: 25%;
-      border: 1px dashed var(--accent-color);
-      border-radius: 6px;
+      top: 22%; left: 33%; width: 34%; height: 26%;
+      border: 2px dashed #38bdf8;
+      border-radius: 8px;
       pointer-events: none;
       z-index: 6;
       display: flex;
       align-items: center;
       justify-content: center;
+      transition: border-color 0.8s ease;
     }
     .target-roi::after {
-      content: "rPPG: HEMOGLOBIN ROI";
+      content: "HEMOGLOBIN ABSORPTION";
       font-size: 8px;
-      color: var(--accent-color);
-      background: rgba(2, 6, 23, 0.85);
+      color: #38bdf8;
+      background: rgba(2, 6, 23, 0.9);
       padding: 2px 4px;
       border-radius: 3px;
     }
 
-    /* 脈波ストリーミング波形グラフ */
     .waveform-panel {
       width: 100%;
       max-width: 380px;
-      height: 65px;
-      background: #040711;
-      border: 1px solid var(--border-color);
+      height: 70px;
+      background: #02050c;
+      border: 1px solid #1e293b;
       border-radius: 8px;
       margin-top: 8px;
       position: relative;
@@ -136,46 +137,46 @@
       margin-top: 8px;
     }
     .metric-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
+      background: rgba(15, 20, 31, 0.8);
+      border: 1px solid #1e293b;
       border-radius: 8px;
       padding: 8px 10px;
+      backdrop-filter: blur(4px);
     }
-    .metric-card span { font-size: 9px; color: var(--text-sub); display: block; }
-    .metric-card strong { font-size: 16px; color: var(--text-main); font-family: monospace; }
-    .val-accent { color: var(--accent-color); }
+    .metric-card span { font-size: 9px; color: #94a3b8; display: block; }
+    .metric-card strong { font-size: 16px; color: #f1f5f9; font-family: monospace; }
+    .val-accent { color: #38bdf8; }
 
-    /* AIエージェント介入カード */
+    /* AIエージェント介入カード（画面の色と連動） */
     .agent-action-card {
       width: 100%;
       max-width: 380px;
-      background: #020617;
-      border: 1px solid var(--accent-color);
-      border-radius: 8px;
-      padding: 10px 12px;
+      background: rgba(2, 6, 23, 0.9);
+      border-radius: 10px;
+      padding: 12px;
       margin-top: 8px;
       display: none;
+      border: 2px solid #38bdf8;
     }
     .agent-action-header {
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 800;
-      color: var(--accent-color);
+      color: #38bdf8;
       display: flex;
       justify-content: space-between;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
     .agent-action-list {
-      font-size: 11px;
-      color: #e2e8f0;
-      line-height: 1.4;
+      font-size: 12px;
+      color: #f8fafc;
+      line-height: 1.5;
     }
 
-    /* 逆引き医学推論カルテ */
     .report-card {
       width: 100%;
       max-width: 380px;
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
+      background: rgba(15, 20, 31, 0.9);
+      border: 1px solid #334155;
       border-radius: 10px;
       padding: 12px;
       margin-top: 8px;
@@ -184,14 +185,14 @@
     .report-title {
       font-size: 11px;
       font-weight: 800;
-      color: var(--accent-color);
+      color: #38bdf8;
       margin-bottom: 6px;
       display: flex;
       justify-content: space-between;
     }
     .report-content {
       font-size: 11px;
-      line-height: 1.55;
+      line-height: 1.6;
       color: #cbd5e1;
     }
 
@@ -222,9 +223,9 @@
       max-width: 380px;
       padding: 10px;
       border-radius: 8px;
-      border: 1px solid var(--border-color);
-      background: #1e293b;
-      color: var(--text-sub);
+      border: 1px solid #334155;
+      background: rgba(30, 41, 59, 0.8);
+      color: #94a3b8;
       font-size: 11px;
       cursor: pointer;
       margin-top: 6px;
@@ -233,7 +234,7 @@
     .progress-bar-container {
       width: 100%;
       max-width: 380px;
-      height: 3px;
+      height: 4px;
       background: #1e293b;
       margin-top: 6px;
       border-radius: 2px;
@@ -243,7 +244,7 @@
     .progress-bar {
       width: 0%;
       height: 100%;
-      background: var(--accent-color);
+      background: #38bdf8;
       transition: width 0.15s linear;
     }
   </style>
@@ -251,15 +252,15 @@
 <body>
 
   <div class="header">
-    <h1>BIO-NEURAL AGENT</h1>
-    <div class="badge">AUTONOMOUS INTERVENTION</div>
+    <h1 id="headerTitle">BIO-NEURAL AGENT</h1>
+    <div class="badge" id="headerBadge">rPPG × Tool Use</div>
   </div>
 
-  <div class="scanner-box">
+  <div class="scanner-box" id="scannerBox">
     <video id="inputVideo" playsinline autoplay muted></video>
     <canvas id="outputCanvas"></canvas>
     <div class="scan-line"></div>
-    <div class="target-roi"></div>
+    <div class="target-roi" id="targetRoi"></div>
   </div>
 
   <div class="progress-bar-container" id="progressContainer">
@@ -289,15 +290,13 @@
     </div>
   </div>
 
-  <!-- AIエージェント自律実行（Tool Use）表示パネル -->
+  <!-- AIエージェント介入カード（画面の色と同期） -->
   <div id="agentActionCard" class="agent-action-card">
     <div class="agent-action-header">
-      <span>⚡ AGENT TOOL USE TRIGGERED</span>
+      <span id="agentStatusTitle">⚡ AGENT TOOL USE TRIGGERED</span>
       <span id="toolNameDisplay">FUNCTION_CALL</span>
     </div>
-    <div id="agentActionList" class="agent-action-list">
-      端末環境を最適パラメータへ自律再構築中...
-    </div>
+    <div id="agentActionList" class="agent-action-list"></div>
   </div>
 
   <!-- 逆引き推論カルテ -->
@@ -306,13 +305,11 @@
       <span>🧠 NEURAL INVERSE INFERENCE</span>
       <span id="reportTimestamp">--:--:--</span>
     </div>
-    <div id="reportContent" class="report-content">
-      生体データを解析中...
-    </div>
+    <div id="reportContent" class="report-content"></div>
   </div>
 
   <button id="startBtn" class="btn-action" onclick="startScanSession()">10秒 生体スキャンを開始</button>
-  <button id="resetEnvBtn" class="btn-reset" onclick="resetEnvironment()">端末の介入適応をリセットして通常に戻す</button>
+  <button id="resetEnvBtn" class="btn-reset" onclick="resetEnvironment()">端末の介入適応を解除してリセット</button>
 
   <script>
     const videoElement = document.getElementById('inputVideo');
@@ -330,12 +327,11 @@
     const timestamps = [];
     const waveHistory = [];
 
-    // Web Audio API（AI主導の音響合成用）
     let audioCtx = null;
     let activeOscillator = null;
     let activeGainNode = null;
+    let currentWaveColor = '#38bdf8';
 
-    // --- 1. rPPG ヘモグロビン吸光シグナル抽出 ---
     function extractSkinGreenMean(landmarks) {
       if (!landmarks) return null;
       const roiPts = [landmarks[10], landmarks[151], landmarks[9], landmarks[8]];
@@ -372,14 +368,14 @@
       if (waveHistory.length > 80) waveHistory.shift();
 
       waveCtx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
-      waveCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim() || '#38bdf8';
-      waveCtx.lineWidth = 2;
+      waveCtx.strokeStyle = currentWaveColor;
+      waveCtx.lineWidth = 2.5;
       waveCtx.beginPath();
 
       const sliceWidth = waveCanvas.width / 80;
       let x = 0;
       for (let i = 0; i < waveHistory.length; i++) {
-        const y = waveCanvas.height / 2 - (waveHistory[i] * 5);
+        const y = waveCanvas.height / 2 - (waveHistory[i] * 6);
         if (i === 0) waveCtx.moveTo(x, y);
         else waveCtx.lineTo(x, y);
         x += sliceWidth;
@@ -421,37 +417,42 @@
       return { bpm, hrv, rawDelta };
     }
 
-    // --- 2. 自律的Tool Use（端末直接介入エージェント機能） ---
-    // AIエージェントが呼び出す実行ツール群
+    // --- 端末介入ツール（ダイナミックな色変化・音・振動） ---
     const AutonomousTools = {
-      // 画面色温度・UI配色の適応書き換え
-      adjustDisplayEnvironment: function(themeType) {
-        if (themeType === 'circadian_amber') {
-          // 交感神経過緊張：視覚野の覚醒を鎮めるアンバー（琥珀色）シフト
-          document.documentElement.style.setProperty('--bg-color', '#140c06');
-          document.documentElement.style.setProperty('--card-bg', '#24140b');
-          document.documentElement.style.setProperty('--accent-color', '#f59e0b');
-          document.documentElement.style.setProperty('--accent-glow', 'rgba(245, 158, 11, 0.3)');
-          document.documentElement.style.setProperty('--border-color', '#451a03');
-        } else if (themeType === 'alert_cyan') {
-          // 副交感神経過剰（眠気）：覚醒度を刺激する高輝度シアンシフト
-          document.documentElement.style.setProperty('--bg-color', '#02131b');
-          document.documentElement.style.setProperty('--card-bg', '#072433');
-          document.documentElement.style.setProperty('--accent-color', '#00f2fe');
-          document.documentElement.style.setProperty('--accent-glow', 'rgba(0, 242, 254, 0.35)');
-          document.documentElement.style.setProperty('--border-color', '#083344');
+      applyDisplayTheme: function(theme) {
+        document.body.className = '';
+        const scanner = document.getElementById('scannerBox');
+        const roi = document.getElementById('targetRoi');
+        const card = document.getElementById('agentActionCard');
+
+        if (theme === 'amber') {
+          document.body.classList.add('theme-amber');
+          currentWaveColor = '#f59e0b';
+          scanner.style.borderColor = '#f59e0b';
+          scanner.style.boxShadow = '0 0 30px rgba(245, 158, 11, 0.4)';
+          roi.style.borderColor = '#f59e0b';
+          card.style.borderColor = '#f59e0b';
+          document.getElementById('agentStatusTitle').style.color = '#f59e0b';
+        } else if (theme === 'cyan') {
+          document.body.classList.add('theme-cyan');
+          currentWaveColor = '#00f2fe';
+          scanner.style.borderColor = '#00f2fe';
+          scanner.style.boxShadow = '0 0 30px rgba(0, 242, 254, 0.4)';
+          roi.style.borderColor = '#00f2fe';
+          card.style.borderColor = '#00f2fe';
+          document.getElementById('agentStatusTitle').style.color = '#00f2fe';
         } else {
-          // ゾーン状態：調和のとれたエメラルドシフト
-          document.documentElement.style.setProperty('--bg-color', '#04130c');
-          document.documentElement.style.setProperty('--card-bg', '#092316');
-          document.documentElement.style.setProperty('--accent-color', '#10b981');
-          document.documentElement.style.setProperty('--accent-glow', 'rgba(16, 185, 129, 0.3)');
-          document.documentElement.style.setProperty('--border-color', '#064e3b');
+          document.body.classList.add('theme-emerald');
+          currentWaveColor = '#10b981';
+          scanner.style.borderColor = '#10b981';
+          scanner.style.boxShadow = '0 0 30px rgba(16, 185, 129, 0.4)';
+          roi.style.borderColor = '#10b981';
+          card.style.borderColor = '#10b981';
+          document.getElementById('agentStatusTitle').style.color = '#10b981';
         }
       },
 
-      // Web Audio APIによる調律周波数バイノーラル音響合成
-      synthesizeEntrainmentSound: function(frequency) {
+      synthesizeSound: function(freq) {
         try {
           if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
           if (activeOscillator) { activeOscillator.stop(); activeOscillator.disconnect(); }
@@ -459,11 +460,10 @@
           const osc = audioCtx.createOscillator();
           const gain = audioCtx.createGain();
           osc.type = 'sine';
-          osc.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
 
-          // フェードインして耳に優しいアンビエント音を生成
           gain.gain.setValueAtTime(0.001, audioCtx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.08, audioCtx.currentTime + 1.5);
+          gain.gain.exponentialRampToValueAtTime(0.12, audioCtx.currentTime + 1.0);
 
           osc.connect(gain);
           gain.connect(audioCtx.destination);
@@ -471,35 +471,30 @@
 
           activeOscillator = osc;
           activeGainNode = gain;
-        } catch(e) { console.warn("Audio synthesis:", e); }
+        } catch(e){}
       },
 
-      // バイブレーションAPIによる自律神経呼吸ガイダンス
-      triggerHapticBreathing: function(patternType) {
+      triggerHaptic: function(pattern) {
         if (!navigator.vibrate) return;
-        if (patternType === 'box_breathing') {
-          // 4秒吸う(振動), 4秒止める(無), 4秒吐く(振動), 4秒止める(無)
+        if (pattern === 'box') {
           navigator.vibrate([400, 200, 400, 200, 600]);
-        } else if (patternType === 'arousal_stimulus') {
-          // 短く鋭い振動で覚醒促進
-          navigator.vibrate([100, 50, 100, 50, 150]);
         } else {
-          // 安定のリズム
-          navigator.vibrate([200, 400, 200]);
+          navigator.vibrate([150, 80, 150]);
         }
       }
     };
 
     function resetEnvironment() {
       if (activeGainNode && audioCtx) {
-        activeGainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.8);
-        setTimeout(() => { if (activeOscillator) activeOscillator.stop(); }, 800);
+        activeGainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+        setTimeout(() => { if (activeOscillator) activeOscillator.stop(); }, 500);
       }
-      document.documentElement.style.setProperty('--bg-color', '#07090e');
-      document.documentElement.style.setProperty('--card-bg', '#0f141f');
-      document.documentElement.style.setProperty('--accent-color', '#38bdf8');
-      document.documentElement.style.setProperty('--accent-glow', 'rgba(56, 189, 248, 0.25)');
-      document.documentElement.style.setProperty('--border-color', '#1e293b');
+      document.body.className = '';
+      currentWaveColor = '#38bdf8';
+      const scanner = document.getElementById('scannerBox');
+      scanner.style.borderColor = '#1e293b';
+      scanner.style.boxShadow = 'none';
+      document.getElementById('targetRoi').style.borderColor = '#38bdf8';
 
       document.getElementById('agentActionCard').style.display = 'none';
       document.getElementById('reportCard').style.display = 'none';
@@ -509,7 +504,6 @@
       document.getElementById('stateVal').innerText = 'STANDBY';
     }
 
-    // --- 3. MediaPipe FaceMesh & センシングループ ---
     const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
     faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
     faceMesh.onResults((res) => {
@@ -546,9 +540,7 @@
       btn.disabled = true;
       btn.innerText = '生体データをスキャン中（顔を動かさないでください）...';
 
-      document.getElementById('agentActionCard').style.display = 'none';
-      document.getElementById('reportCard').style.display = 'none';
-      document.getElementById('resetEnvBtn').style.display = 'none';
+      resetEnvironment();
       document.getElementById('progressContainer').style.display = 'block';
       document.getElementById('progressBar').style.width = '0%';
       document.getElementById('stateVal').innerText = 'ACQUIRING...';
@@ -566,7 +558,7 @@
         outputCanvas.width = 640;
         outputCanvas.height = 480;
         waveCanvas.width = 380;
-        waveCanvas.height = 65;
+        waveCanvas.height = 70;
 
         cameraInstance = new Camera(videoElement, {
           onFrame: async () => { await faceMesh.send({ image: videoElement }); },
@@ -579,17 +571,15 @@
       isScanning = true;
     }
 
-    // --- 4. スキャン完了とAIエージェント推論・Tool自律実行 ---
     async function completeScanSession() {
       isScanning = false;
       document.getElementById('progressBar').style.width = '100%';
-      document.getElementById('startBtn').innerText = 'AIエージェントが自律推論＆端末環境を調律中...';
+      document.getElementById('startBtn').innerText = 'AIが自律推論＆端末環境を調律中...';
 
       const m = analyzeBiometrics();
       document.getElementById('bpmVal').innerText = m.bpm;
       document.getElementById('hrvVal').innerText = m.hrv;
 
-      // 生体ゆらぎに応じたエージェント判断（Tool Use）の決定
       let toolDecision = {};
       let stateLabel = "";
 
@@ -597,50 +587,49 @@
         stateLabel = "交感神経過緊張（認知飽和）";
         toolDecision = {
           functionName: "apply_parasympathetic_reset",
-          theme: "circadian_amber",
-          frequency: 432, // 自律神経を鎮める周波数
-          haptic: "box_breathing",
+          theme: "amber",
+          frequency: 432,
+          haptic: "box",
           diagnosis: "末梢血管収縮と高周波脈波成分の減衰から、前頭前野が限界を迎えている『認知的オーバードライブ』を検出。無意識の筋緊張が視覚野に干渉しています。"
         };
       } else if (m.hrv > 65) {
         stateLabel = "副交感神経優位（集中減衰）";
         toolDecision = {
           functionName: "apply_arousal_boost",
-          theme: "alert_cyan",
-          frequency: 528, // 覚醒・リフレッシュ周波数
-          haptic: "arousal_stimulus",
+          theme: "cyan",
+          frequency: 528,
+          haptic: "pulse",
           diagnosis: "脈波振幅の弛緩と徐脈傾向から、覚醒レベルの低下と集中途切れのシグネチャーを検出。外界からの適度な感覚入力が必要です。"
         };
       } else {
         stateLabel = "最適共鳴ゾーン（深い没入）";
         toolDecision = {
           functionName: "maintain_flow_state",
-          theme: "flow_emerald",
+          theme: "emerald",
           frequency: 416,
-          haptic: "subtle_sync",
+          haptic: "pulse",
           diagnosis: "脈波ゆらぎ（HRV）と拍動間隔が理想的なコヒーレンス（調和）を形成しています。ワーキングメモリと自律神経が最も効率よく連動している状態です。"
         };
       }
 
       document.getElementById('stateVal').innerText = stateLabel;
 
-      // 【Tool Useの自律実行】AIの決定パラメータに基づいて端末を直接操作
-      AutonomousTools.adjustDisplayEnvironment(toolDecision.theme);
-      AutonomousTools.synthesizeEntrainmentSound(toolDecision.frequency);
-      AutonomousTools.triggerHapticBreathing(toolDecision.haptic);
+      // 端末の介入実行
+      AutonomousTools.applyDisplayTheme(toolDecision.theme);
+      AutonomousTools.synthesizeSound(toolDecision.frequency);
+      AutonomousTools.triggerHaptic(toolDecision.haptic);
 
-      // Tool実行内容を画面に可視化
+      // UI描画
       const actionCard = document.getElementById('agentActionCard');
       const actionList = document.getElementById('agentActionList');
       document.getElementById('toolNameDisplay').innerText = toolDecision.functionName;
       actionList.innerHTML = `
-        ・<strong>UI波長適応:</strong> ${toolDecision.theme}（視覚野の緊張を緩和）<br>
+        ・<strong>UI背景適応:</strong> ${toolDecision.theme.toUpperCase()} モード（視覚野の覚醒度を調整）<br>
         ・<strong>バイノーラル調律音:</strong> ${toolDecision.frequency} Hz リアルタイム合成中<br>
-        ・<strong>触覚ガイダンス:</strong> ${toolDecision.haptic} リズムで触覚介入
+        ・<strong>触覚ガイダンス:</strong> 呼吸誘導バイブレーション実行
       `;
       actionCard.style.display = 'block';
 
-      // 逆引き推論カルテの描画
       const reportCard = document.getElementById('reportCard');
       const reportContent = document.getElementById('reportContent');
       document.getElementById('reportTimestamp').innerText = new Date().toTimeString().split(' ')[0];
@@ -648,8 +637,7 @@
       const focusMins = Math.max(8, Math.round((m.hrv / 100) * 45));
       reportContent.innerHTML = `
         <div><strong>【逆引き医学推論】</strong><br>${toolDecision.diagnosis}</div>
-        <div style="margin-top:6px;"><strong>【推定限界集中時間】</strong> 残り <span style="color:var(--accent-color); font-weight:bold;">約${focusMins}分間</span></div>
-        <div style="margin-top:6px;"><strong>【エージェント適応ステータス】</strong><br>現在、端末があなたの神経系と物理同期しています。深呼吸を行い、このまま画面を見つめて調律を完了させてください。</div>
+        <div style="margin-top:6px;"><strong>【推定限界集中時間】</strong> 残り <span style="font-weight:bold; color:#f8fafc;">約${focusMins}分間</span></div>
       `;
       reportCard.style.display = 'block';
 
