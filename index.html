@@ -53,7 +53,6 @@
       border-radius: 4px;
     }
 
-    /* 計測モード選択タブ */
     .mode-selector {
       width: 100%;
       max-width: 380px;
@@ -90,7 +89,7 @@
       position: relative;
       width: 100%;
       max-width: 380px;
-      height: 240px;
+      height: 250px;
       border-radius: 12px;
       overflow: hidden;
       background: #020617;
@@ -117,11 +116,11 @@
       justify-content: center;
     }
     .silhouette-svg {
-      width: 170px;
-      height: 210px;
+      width: 240px;
+      height: 235px;
       fill: none;
-      stroke: rgba(56, 189, 248, 0.4);
-      stroke-width: 1.5;
+      stroke: rgba(56, 189, 248, 0.45);
+      stroke-width: 1.8;
       stroke-dasharray: 6 4;
       pointer-events: none;
       transition: stroke 0.4s ease;
@@ -144,13 +143,14 @@
       left: 8px;
       font-size: 9px;
       color: #38bdf8;
-      background: rgba(2, 6, 23, 0.85);
+      background: rgba(2, 6, 23, 0.9);
       padding: 3px 6px;
       border-radius: 4px;
-      border: 1px solid rgba(56, 189, 248, 0.3);
+      border: 1px solid rgba(56, 189, 248, 0.4);
       z-index: 7;
       pointer-events: none;
       display: none;
+      font-weight: 700;
     }
 
     .scan-line {
@@ -303,7 +303,6 @@
       margin-bottom: 2px;
     }
 
-    /* ボタンのタッチ領域とタップ反応の確実化 */
     .btn-action {
       width: 100%;
       max-width: 380px;
@@ -376,12 +375,12 @@
     <video id="inputVideo" playsinline autoplay muted></video>
     <canvas id="outputCanvas"></canvas>
     
-    <div class="pulse-indicator" id="pulseIndicator">血流脈動 50倍増幅可視化中</div>
+    <div class="pulse-indicator" id="pulseIndicator">血流脈動 リアルタイム可視化中</div>
 
     <div class="silhouette-overlay">
-      <svg class="silhouette-svg" id="silhouetteSvg" viewBox="0 0 100 125">
-        <ellipse cx="50" cy="40" rx="22" ry="28" />
-        <path d="M 38 66 C 36 76 22 84 8 98 L 8 125 L 92 125 L 92 98 C 78 84 64 76 62 66" />
+      <svg class="silhouette-svg" id="silhouetteSvg" viewBox="0 0 120 125">
+        <ellipse cx="60" cy="42" rx="34" ry="32" />
+        <path d="M 38 72 C 34 82 16 88 0 102 L 0 125 L 120 125 L 120 102 C 104 88 86 82 82 72" />
       </svg>
       <div class="guide-hint" id="guideHint">枠内に顔を合わせてください</div>
     </div>
@@ -455,6 +454,7 @@
     let currentWaveColor = '#38bdf8';
 
     let bp_x1 = 0, bp_x2 = 0, bp_y1 = 0, bp_y2 = 0;
+    let lastValidSignal = 0;
 
     function setMeasureMode(sec) {
       if (isScanning) return;
@@ -509,36 +509,54 @@
 
         const Xs = 3 * R - 2 * G;
         const Ys = 1.5 * R + G - 1.5 * B;
-        return Xs - 0.7 * Ys;
+        const raw = Xs - 0.7 * Ys;
+
+        if (Math.abs(raw - lastValidSignal) > 8.0 && lastValidSignal !== 0) {
+          return lastValidSignal;
+        }
+        lastValidSignal = raw;
+        return raw;
       } catch (e) {
         return null;
       }
     }
 
-    function drawEulerianPulseOverlay(roi, signalVal) {
+    // 濃いシアン（青緑）とアンバー（琥珀）による高コントラスト脈動オーバーレイ
+    function drawHighContrastPulseOverlay(roi, signalVal) {
       if (!isScanning) return;
+
       const clamped = Math.max(-1.5, Math.min(1.5, signalVal));
-      const intensity = Math.abs(clamped) / 1.5;
+      const intensity = Math.min(1.0, Math.abs(clamped) / 1.0); // 感度を引き上げ
 
       outCtx.save();
+      outCtx.globalCompositeOperation = 'screen';
+
       const fx = roi.landmarks[10].x * outputCanvas.width;
       const fy = roi.landmarks[10].y * outputCanvas.height;
       const leftCheek = roi.landmarks[117];
       const rightCheek = roi.landmarks[346];
 
       [
-        { x: fx, y: fy, r: 28 },
-        { x: leftCheek.x * outputCanvas.width, y: leftCheek.y * outputCanvas.height, r: 24 },
-        { x: rightCheek.x * outputCanvas.width, y: rightCheek.y * outputCanvas.height, r: 24 }
+        { x: fx, y: fy, r: 38 },
+        { x: leftCheek.x * outputCanvas.width, y: leftCheek.y * outputCanvas.height, r: 32 },
+        { x: rightCheek.x * outputCanvas.width, y: rightCheek.y * outputCanvas.height, r: 32 }
       ].forEach(zone => {
-        const grad = outCtx.createRadialGradient(zone.x, zone.y, 4, zone.x, zone.y, zone.r);
+        const grad = outCtx.createRadialGradient(zone.x, zone.y, 2, zone.x, zone.y, zone.r);
+
         if (signalVal > 0) {
-          grad.addColorStop(0, `rgba(56, 189, 248, ${intensity * 0.75})`);
-          grad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+          // 吸光ピーク時：濃いシアン（青緑）で力強く明滅
+          const alpha = 0.2 + intensity * 0.75;
+          grad.addColorStop(0, `rgba(0, 242, 254, ${alpha})`);
+          grad.addColorStop(0.6, `rgba(0, 200, 255, ${alpha * 0.5})`);
+          grad.addColorStop(1, 'rgba(0, 200, 255, 0)');
         } else {
-          grad.addColorStop(0, `rgba(244, 63, 94, ${intensity * 0.65})`);
-          grad.addColorStop(1, 'rgba(244, 63, 94, 0)');
+          // 谷の時：濃いアンバー（琥珀・オレンジ）で力強く明滅
+          const alpha = 0.2 + intensity * 0.75;
+          grad.addColorStop(0, `rgba(245, 158, 11, ${alpha})`);
+          grad.addColorStop(0.6, `rgba(234, 88, 12, ${alpha * 0.5})`);
+          grad.addColorStop(1, 'rgba(234, 88, 12, 0)');
         }
+
         outCtx.fillStyle = grad;
         outCtx.beginPath();
         outCtx.arc(zone.x, zone.y, zone.r, 0, Math.PI * 2);
@@ -581,30 +599,70 @@
       waveCtx.stroke();
     }
 
+    function resampleUniform(signals, times, targetFs = 30.0) {
+      if (signals.length < 2) return { resampledSignals: signals, dt: 1000 / targetFs };
+
+      const dt = 1000 / targetFs;
+      const startTime = times[0];
+      const endTime = times[times.length - 1];
+      const resampledSignals = [];
+
+      let srcIdx = 0;
+      for (let t = startTime; t <= endTime; t += dt) {
+        while (srcIdx < times.length - 1 && times[srcIdx + 1] < t) {
+          srcIdx++;
+        }
+        if (srcIdx >= times.length - 1) {
+          resampledSignals.push(signals[signals.length - 1]);
+        } else {
+          const t0 = times[srcIdx];
+          const t1 = times[srcIdx + 1];
+          const v0 = signals[srcIdx];
+          const v1 = signals[srcIdx + 1];
+          const factor = (t1 === t0) ? 0 : (t - t0) / (t1 - t0);
+          resampledSignals.push(v0 + factor * (v1 - v0));
+        }
+      }
+
+      return { resampledSignals, dt };
+    }
+
     function analyzeBiometrics() {
-      const minPoints = currentModeSeconds === 10 ? 50 : 300;
+      const minPoints = currentModeSeconds === 10 ? 40 : 250;
       if (rawSignals.length < minPoints) return { bpm: 72, hrv: 45 };
 
-      const peaks = [];
-      for (let i = 2; i < rawSignals.length - 2; i++) {
-        if (rawSignals[i] > rawSignals[i - 1] && 
-            rawSignals[i] > rawSignals[i - 2] && 
-            rawSignals[i] > rawSignals[i + 1] && 
-            rawSignals[i] > rawSignals[i + 2] && 
-            rawSignals[i] > 0.08) {
-          peaks.push(timestamps[i]);
+      const { resampledSignals, dt } = resampleUniform(rawSignals, timestamps, 30.0);
+
+      const windowSize = 15;
+      const detrended = [];
+      for (let i = 0; i < resampledSignals.length; i++) {
+        const start = Math.max(0, i - Math.floor(windowSize / 2));
+        const end = Math.min(resampledSignals.length, i + Math.floor(windowSize / 2));
+        let sum = 0;
+        for (let j = start; j < end; j++) sum += resampledSignals[j];
+        detrended.push(resampledSignals[i] - (sum / (end - start)));
+      }
+
+      const peakIndices = [];
+      for (let i = 2; i < detrended.length - 2; i++) {
+        if (detrended[i] > detrended[i - 1] && 
+            detrended[i] > detrended[i - 2] && 
+            detrended[i] > detrended[i + 1] && 
+            detrended[i] > detrended[i + 2] && 
+            detrended[i] > 0.04) {
+          peakIndices.push(i);
         }
       }
 
       let bpm = 74;
       let hrv = 40;
 
-      if (peaks.length >= 3) {
+      if (peakIndices.length >= 3) {
         const intervals = [];
-        for (let i = 1; i < peaks.length; i++) {
-          const diff = peaks[i] - peaks[i - 1];
-          if (diff >= 333 && diff <= 1400) {
-            intervals.push(diff);
+        for (let i = 1; i < peakIndices.length; i++) {
+          const diffMs = (peakIndices[i] - peakIndices[i - 1]) * dt;
+          if (diffMs >= 375 && diffMs <= 1420) {
+            intervals.push(diffMs);
           }
         }
 
@@ -673,7 +731,7 @@
       scanner.style.borderColor = '#1e293b';
       scanner.style.boxShadow = 'none';
 
-      document.getElementById('silhouetteSvg').style.stroke = 'rgba(56, 189, 248, 0.4)';
+      document.getElementById('silhouetteSvg').style.stroke = 'rgba(56, 189, 248, 0.45)';
       document.getElementById('scanLine').style.display = 'none';
       document.getElementById('pulseIndicator').style.display = 'none';
       document.getElementById('agentActionCard').style.display = 'none';
@@ -686,6 +744,7 @@
       document.getElementById('equivVal').innerText = '--';
 
       bp_x1 = 0; bp_x2 = 0; bp_y1 = 0; bp_y2 = 0;
+      lastValidSignal = 0;
     }
 
     const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
@@ -710,7 +769,7 @@
           rawSignals.push(filtered);
           timestamps.push(now);
 
-          drawEulerianPulseOverlay(roi, filtered);
+          drawHighContrastPulseOverlay(roi, filtered);
           drawWaveform(filtered);
 
           const elapsed = now - scanStartTime;
@@ -720,7 +779,7 @@
           if (elapsed >= scanDurationMs) completeScanSession();
         }
       } else {
-        document.getElementById('silhouetteSvg').style.stroke = 'rgba(56, 189, 248, 0.4)';
+        document.getElementById('silhouetteSvg').style.stroke = 'rgba(56, 189, 248, 0.45)';
         if (!isScanning) document.getElementById('guideHint').innerText = '枠内に顔を合わせてください';
       }
       outCtx.restore();
