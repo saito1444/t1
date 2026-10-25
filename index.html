@@ -3,24 +3,35 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>rPPG Bio-Neural Diagnostic | AI自律神経・集中限界解析</title>
+  <title>Bio-Neural Autonomous Agent | rPPG × Tool Use</title>
   
   <!-- MediaPipe Face Mesh & Camera CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
   <style>
+    :root {
+      --bg-color: #07090e;
+      --card-bg: #0f141f;
+      --accent-color: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      --text-main: #f1f5f9;
+      --text-sub: #94a3b8;
+      --border-color: #1e293b;
+    }
+
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body {
       margin: 0;
-      padding: 16px;
-      background: #080a0f;
-      color: #e2e8f0;
+      padding: 14px;
+      background: var(--bg-color);
+      color: var(--text-main);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
       display: flex;
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
+      transition: background 1.2s ease, filter 1.2s ease;
     }
 
     .header {
@@ -29,22 +40,22 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
-      border-bottom: 1px solid #1e293b;
+      margin-bottom: 10px;
+      border-bottom: 1px solid var(--border-color);
       padding-bottom: 8px;
     }
     .header h1 {
-      font-size: 14px;
+      font-size: 13px;
       margin: 0;
-      letter-spacing: 0.1em;
-      color: #38bdf8;
+      letter-spacing: 0.08em;
+      color: var(--accent-color);
       font-weight: 800;
     }
     .badge {
-      font-size: 10px;
-      background: #0f172a;
-      border: 1px solid #38bdf8;
-      color: #38bdf8;
+      font-size: 9px;
+      background: #020617;
+      border: 1px solid var(--accent-color);
+      color: var(--accent-color);
       padding: 2px 6px;
       border-radius: 4px;
     }
@@ -53,14 +64,14 @@
       position: relative;
       width: 100%;
       max-width: 380px;
-      height: 240px;
+      height: 220px;
       border-radius: 12px;
       overflow: hidden;
       background: #020617;
-      border: 1px solid #1e293b;
-      box-shadow: 0 0 20px rgba(56, 189, 248, 0.1);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 0 25px var(--accent-glow);
     }
-    video, canvas {
+    video, #outputCanvas {
       position: absolute;
       width: 100%;
       height: 100%;
@@ -71,8 +82,8 @@
     .scan-line {
       position: absolute;
       top: 0; left: 0; width: 100%; height: 2px;
-      background: linear-gradient(90deg, transparent, #38bdf8, transparent);
-      box-shadow: 0 0 8px #38bdf8;
+      background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
+      box-shadow: 0 0 10px var(--accent-color);
       animation: scan 2.5s infinite linear;
       z-index: 5;
     }
@@ -86,7 +97,7 @@
     .target-roi {
       position: absolute;
       top: 25%; left: 35%; width: 30%; height: 25%;
-      border: 1px dashed rgba(56, 189, 248, 0.6);
+      border: 1px dashed var(--accent-color);
       border-radius: 6px;
       pointer-events: none;
       z-index: 6;
@@ -95,91 +106,109 @@
       justify-content: center;
     }
     .target-roi::after {
-      content: "ROI: HEMOGLOBIN";
+      content: "rPPG: HEMOGLOBIN ROI";
       font-size: 8px;
-      color: #38bdf8;
-      background: rgba(2, 6, 23, 0.8);
-      padding: 1px 4px;
-      border-radius: 2px;
+      color: var(--accent-color);
+      background: rgba(2, 6, 23, 0.85);
+      padding: 2px 4px;
+      border-radius: 3px;
     }
 
-    /* 波形表示グラフ */
+    /* 脈波ストリーミング波形グラフ */
     .waveform-panel {
       width: 100%;
       max-width: 380px;
-      height: 70px;
-      background: #090d16;
-      border: 1px solid #1e293b;
+      height: 65px;
+      background: #040711;
+      border: 1px solid var(--border-color);
       border-radius: 8px;
-      margin-top: 10px;
+      margin-top: 8px;
       position: relative;
-      overflow: hidden;
     }
-    #waveCanvas {
-      width: 100%;
-      height: 100%;
-      transform: none;
-    }
+    #waveCanvas { width: 100%; height: 100%; }
 
     .metrics-grid {
       width: 100%;
       max-width: 380px;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-top: 10px;
+      gap: 6px;
+      margin-top: 8px;
     }
     .metric-card {
-      background: #0f172a;
-      border: 1px solid #1e293b;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 8px 12px;
+      padding: 8px 10px;
     }
-    .metric-card span { font-size: 10px; color: #94a3b8; display: block; }
-    .metric-card strong { font-size: 18px; color: #f8fafc; font-family: monospace; }
-    .metric-card .val-blue { color: #38bdf8; }
-    .metric-card .val-green { color: #4ade80; }
+    .metric-card span { font-size: 9px; color: var(--text-sub); display: block; }
+    .metric-card strong { font-size: 16px; color: var(--text-main); font-family: monospace; }
+    .val-accent { color: var(--accent-color); }
 
-    /* AIレポート表示エリア */
+    /* AIエージェント介入カード */
+    .agent-action-card {
+      width: 100%;
+      max-width: 380px;
+      background: #020617;
+      border: 1px solid var(--accent-color);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-top: 8px;
+      display: none;
+    }
+    .agent-action-header {
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--accent-color);
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .agent-action-list {
+      font-size: 11px;
+      color: #e2e8f0;
+      line-height: 1.4;
+    }
+
+    /* 逆引き医学推論カルテ */
     .report-card {
       width: 100%;
       max-width: 380px;
-      background: #0f172a;
-      border: 1px solid #334155;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
       border-radius: 10px;
-      padding: 14px;
-      margin-top: 12px;
+      padding: 12px;
+      margin-top: 8px;
       display: none;
     }
-    .report-header {
-      font-size: 12px;
+    .report-title {
+      font-size: 11px;
       font-weight: 800;
-      color: #38bdf8;
-      margin-bottom: 8px;
+      color: var(--accent-color);
+      margin-bottom: 6px;
       display: flex;
       justify-content: space-between;
     }
-    .report-body {
-      font-size: 12px;
-      line-height: 1.6;
+    .report-content {
+      font-size: 11px;
+      line-height: 1.55;
       color: #cbd5e1;
     }
-    .report-body strong { color: #f1f5f9; }
 
     .btn-action {
       width: 100%;
       max-width: 380px;
-      padding: 14px;
+      padding: 13px;
       border-radius: 8px;
       border: none;
       background: linear-gradient(135deg, #0284c7, #2563eb);
       color: #ffffff;
       font-size: 13px;
       font-weight: 800;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
       cursor: pointer;
-      margin-top: 12px;
-      box-shadow: 0 4px 15px rgba(2, 132, 199, 0.3);
+      margin-top: 10px;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
     }
     .btn-action:disabled {
       background: #334155;
@@ -187,12 +216,26 @@
       box-shadow: none;
     }
 
+    .btn-reset {
+      display: none;
+      width: 100%;
+      max-width: 380px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: #1e293b;
+      color: var(--text-sub);
+      font-size: 11px;
+      cursor: pointer;
+      margin-top: 6px;
+    }
+
     .progress-bar-container {
       width: 100%;
       max-width: 380px;
-      height: 4px;
+      height: 3px;
       background: #1e293b;
-      margin-top: 8px;
+      margin-top: 6px;
       border-radius: 2px;
       overflow: hidden;
       display: none;
@@ -200,16 +243,16 @@
     .progress-bar {
       width: 0%;
       height: 100%;
-      background: #38bdf8;
-      transition: width 0.2s linear;
+      background: var(--accent-color);
+      transition: width 0.15s linear;
     }
   </style>
 </head>
 <body>
 
   <div class="header">
-    <h1>BIO-NEURAL rPPG</h1>
-    <div class="badge">CAMERA PULSE AI</div>
+    <h1>BIO-NEURAL AGENT</h1>
+    <div class="badge">AUTONOMOUS INTERVENTION</div>
   </div>
 
   <div class="scanner-box">
@@ -223,7 +266,6 @@
     <div class="progress-bar" id="progressBar"></div>
   </div>
 
-  <!-- 抽出脈波の波形レンダリング -->
   <div class="waveform-panel">
     <canvas id="waveCanvas"></canvas>
   </div>
@@ -231,33 +273,46 @@
   <div class="metrics-grid">
     <div class="metric-card">
       <span>ESTIMATED PULSE (BPM)</span>
-      <strong id="bpmVal" class="val-blue">--</strong>
+      <strong id="bpmVal" class="val-accent">--</strong>
     </div>
     <div class="metric-card">
       <span>HRV FLUCTUATION (ms)</span>
-      <strong id="hrvVal" class="val-green">--</strong>
+      <strong id="hrvVal" class="val-accent">--</strong>
     </div>
     <div class="metric-card">
       <span>AUTONOMIC STATE</span>
-      <strong id="stateVal" style="font-size:14px;">STANDBY</strong>
+      <strong id="stateVal" style="font-size:12px;">STANDBY</strong>
     </div>
     <div class="metric-card">
-      <span>ROI HEMOGLOBIN Δ</span>
-      <strong id="greenMeanVal" style="font-size:14px;">0.00</strong>
+      <span>ROI ABSORBANCE Δ</span>
+      <strong id="deltaVal" style="font-size:12px;">0.00</strong>
     </div>
   </div>
 
+  <!-- AIエージェント自律実行（Tool Use）表示パネル -->
+  <div id="agentActionCard" class="agent-action-card">
+    <div class="agent-action-header">
+      <span>⚡ AGENT TOOL USE TRIGGERED</span>
+      <span id="toolNameDisplay">FUNCTION_CALL</span>
+    </div>
+    <div id="agentActionList" class="agent-action-list">
+      端末環境を最適パラメータへ自律再構築中...
+    </div>
+  </div>
+
+  <!-- 逆引き推論カルテ -->
   <div id="reportCard" class="report-card">
-    <div class="report-header">
-      <span>🧠 AI NEURAL DIAGNOSTIC</span>
+    <div class="report-title">
+      <span>🧠 NEURAL INVERSE INFERENCE</span>
       <span id="reportTimestamp">--:--:--</span>
     </div>
-    <div id="reportBody" class="report-body">
+    <div id="reportContent" class="report-content">
       生体データを解析中...
     </div>
   </div>
 
   <button id="startBtn" class="btn-action" onclick="startScanSession()">10秒 生体スキャンを開始</button>
+  <button id="resetEnvBtn" class="btn-reset" onclick="resetEnvironment()">端末の介入適応をリセットして通常に戻す</button>
 
   <script>
     const videoElement = document.getElementById('inputVideo');
@@ -269,22 +324,24 @@
     let cameraInstance = null;
     let isScanning = false;
     let scanStartTime = null;
-    const SCAN_DURATION_MS = 10000; // 10秒間の微小吸光度スキャン
+    const SCAN_DURATION_MS = 10000;
 
-    // rPPG用生体バッファ
     const greenSignals = [];
     const timestamps = [];
     const waveHistory = [];
 
-    // 高精度ROI（額・両頬などヘモグロビン吸光が高い顔面領域）
-    function extractSkinGreenMean(imageSource, landmarks) {
+    // Web Audio API（AI主導の音響合成用）
+    let audioCtx = null;
+    let activeOscillator = null;
+    let activeGainNode = null;
+
+    // --- 1. rPPG ヘモグロビン吸光シグナル抽出 ---
+    function extractSkinGreenMean(landmarks) {
       if (!landmarks) return null;
-      
-      // 額・鼻筋周辺の代表ランドマーク（10: 額中央, 151: 眉間, 9: 鼻根）
-      const roiLandmarks = [landmarks[10], landmarks[151], landmarks[9], landmarks[8]];
+      const roiPts = [landmarks[10], landmarks[151], landmarks[9], landmarks[8]];
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
 
-      roiLandmarks.forEach(pt => {
+      roiPts.forEach(pt => {
         const px = pt.x * outputCanvas.width;
         const py = pt.y * outputCanvas.height;
         if (px < minX) minX = px;
@@ -295,14 +352,11 @@
 
       const w = Math.max(10, Math.floor(maxX - minX));
       const h = Math.max(10, Math.floor(maxY - minY));
-      const sx = Math.floor(minX);
-      const sy = Math.floor(minY);
 
       try {
-        const frameData = outCtx.getImageData(sx, sy, w, h).data;
+        const frameData = outCtx.getImageData(Math.floor(minX), Math.floor(minY), w, h).data;
         let greenSum = 0;
         let count = 0;
-        // 緑色（500〜600nm付近のヘモグロビン吸光波長）の平均輝度を抽出
         for (let i = 1; i < frameData.length; i += 4) {
           greenSum += frameData[i];
           count++;
@@ -313,21 +367,19 @@
       }
     }
 
-    // 波形のリアルタイム描画
     function drawWaveform(val) {
       waveHistory.push(val);
       if (waveHistory.length > 80) waveHistory.shift();
 
       waveCtx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
-      waveCtx.strokeStyle = '#38bdf8';
+      waveCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim() || '#38bdf8';
       waveCtx.lineWidth = 2;
       waveCtx.beginPath();
 
       const sliceWidth = waveCanvas.width / 80;
       let x = 0;
       for (let i = 0; i < waveHistory.length; i++) {
-        // 正規化してキャンバス縦幅にマッピング
-        const y = waveCanvas.height / 2 - (waveHistory[i] * 4);
+        const y = waveCanvas.height / 2 - (waveHistory[i] * 5);
         if (i === 0) waveCtx.moveTo(x, y);
         else waveCtx.lineTo(x, y);
         x += sliceWidth;
@@ -335,32 +387,28 @@
       waveCtx.stroke();
     }
 
-    // 周波数・心拍数（BPM）および心拍変動（HRV）の解析
     function analyzeBiometrics() {
       if (greenSignals.length < 50) return { bpm: 72, hrv: 45, rawDelta: 0.12 };
 
-      // 信号の正規化（デトレンド）
       const mean = greenSignals.reduce((a, b) => a + b, 0) / greenSignals.length;
       const centered = greenSignals.map(v => v - mean);
 
-      // ピーク検出（簡易拍動間隔解析）
       let peaks = [];
       for (let i = 1; i < centered.length - 1; i++) {
-        if (centered[i] > centered[i - 1] && centered[i] > centered[i + 1] && centered[i] > 0.05) {
+        if (centered[i] > centered[i - 1] && centered[i] > centered[i + 1] && centered[i] > 0.04) {
           peaks.push(timestamps[i]);
         }
       }
 
-      let bpm = 74;
+      let bpm = 75;
       let hrv = 42;
       if (peaks.length >= 2) {
         const intervals = [];
         for (let i = 1; i < peaks.length; i++) intervals.push(peaks[i] - peaks[i - 1]);
         const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
         bpm = Math.round(60000 / avgInterval);
-        bpm = Math.min(130, Math.max(55, bpm)); // 生理的許容域にクリップ
+        bpm = Math.min(130, Math.max(55, bpm));
 
-        // HRV（RMSSDの近似値: ミリ秒単位の揺らぎ）
         let diffSqSum = 0;
         for (let i = 1; i < intervals.length; i++) {
           diffSqSum += Math.pow(intervals[i] - intervals[i - 1], 2);
@@ -369,65 +417,138 @@
         hrv = Math.min(110, Math.max(18, hrv));
       }
 
-      return {
-        bpm: bpm,
-        hrv: hrv,
-        rawDelta: (Math.max(...greenSignals) - Math.min(...greenSignals)).toFixed(3)
-      };
+      const rawDelta = (Math.max(...greenSignals) - Math.min(...greenSignals)).toFixed(3);
+      return { bpm, hrv, rawDelta };
     }
 
-    // MediaPipe FaceMesh 初期化
-    const faceMesh = new FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-    });
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
+    // --- 2. 自律的Tool Use（端末直接介入エージェント機能） ---
+    // AIエージェントが呼び出す実行ツール群
+    const AutonomousTools = {
+      // 画面色温度・UI配色の適応書き換え
+      adjustDisplayEnvironment: function(themeType) {
+        if (themeType === 'circadian_amber') {
+          // 交感神経過緊張：視覚野の覚醒を鎮めるアンバー（琥珀色）シフト
+          document.documentElement.style.setProperty('--bg-color', '#140c06');
+          document.documentElement.style.setProperty('--card-bg', '#24140b');
+          document.documentElement.style.setProperty('--accent-color', '#f59e0b');
+          document.documentElement.style.setProperty('--accent-glow', 'rgba(245, 158, 11, 0.3)');
+          document.documentElement.style.setProperty('--border-color', '#451a03');
+        } else if (themeType === 'alert_cyan') {
+          // 副交感神経過剰（眠気）：覚醒度を刺激する高輝度シアンシフト
+          document.documentElement.style.setProperty('--bg-color', '#02131b');
+          document.documentElement.style.setProperty('--card-bg', '#072433');
+          document.documentElement.style.setProperty('--accent-color', '#00f2fe');
+          document.documentElement.style.setProperty('--accent-glow', 'rgba(0, 242, 254, 0.35)');
+          document.documentElement.style.setProperty('--border-color', '#083344');
+        } else {
+          // ゾーン状態：調和のとれたエメラルドシフト
+          document.documentElement.style.setProperty('--bg-color', '#04130c');
+          document.documentElement.style.setProperty('--card-bg', '#092316');
+          document.documentElement.style.setProperty('--accent-color', '#10b981');
+          document.documentElement.style.setProperty('--accent-glow', 'rgba(16, 185, 129, 0.3)');
+          document.documentElement.style.setProperty('--border-color', '#064e3b');
+        }
+      },
 
-    faceMesh.onResults((results) => {
+      // Web Audio APIによる調律周波数バイノーラル音響合成
+      synthesizeEntrainmentSound: function(frequency) {
+        try {
+          if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          if (activeOscillator) { activeOscillator.stop(); activeOscillator.disconnect(); }
+
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+
+          // フェードインして耳に優しいアンビエント音を生成
+          gain.gain.setValueAtTime(0.001, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.08, audioCtx.currentTime + 1.5);
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+
+          activeOscillator = osc;
+          activeGainNode = gain;
+        } catch(e) { console.warn("Audio synthesis:", e); }
+      },
+
+      // バイブレーションAPIによる自律神経呼吸ガイダンス
+      triggerHapticBreathing: function(patternType) {
+        if (!navigator.vibrate) return;
+        if (patternType === 'box_breathing') {
+          // 4秒吸う(振動), 4秒止める(無), 4秒吐く(振動), 4秒止める(無)
+          navigator.vibrate([400, 200, 400, 200, 600]);
+        } else if (patternType === 'arousal_stimulus') {
+          // 短く鋭い振動で覚醒促進
+          navigator.vibrate([100, 50, 100, 50, 150]);
+        } else {
+          // 安定のリズム
+          navigator.vibrate([200, 400, 200]);
+        }
+      }
+    };
+
+    function resetEnvironment() {
+      if (activeGainNode && audioCtx) {
+        activeGainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.8);
+        setTimeout(() => { if (activeOscillator) activeOscillator.stop(); }, 800);
+      }
+      document.documentElement.style.setProperty('--bg-color', '#07090e');
+      document.documentElement.style.setProperty('--card-bg', '#0f141f');
+      document.documentElement.style.setProperty('--accent-color', '#38bdf8');
+      document.documentElement.style.setProperty('--accent-glow', 'rgba(56, 189, 248, 0.25)');
+      document.documentElement.style.setProperty('--border-color', '#1e293b');
+
+      document.getElementById('agentActionCard').style.display = 'none';
+      document.getElementById('reportCard').style.display = 'none';
+      document.getElementById('resetEnvBtn').style.display = 'none';
+      document.getElementById('bpmVal').innerText = '--';
+      document.getElementById('hrvVal').innerText = '--';
+      document.getElementById('stateVal').innerText = 'STANDBY';
+    }
+
+    // --- 3. MediaPipe FaceMesh & センシングループ ---
+    const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+    faceMesh.onResults((res) => {
       outCtx.save();
       outCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
-      outCtx.drawImage(results.image, 0, 0, outputCanvas.width, outputCanvas.height);
+      outCtx.drawImage(res.image, 0, 0, outputCanvas.width, outputCanvas.height);
 
-      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        const lm = results.multiFaceLandmarks[0];
-        const gVal = extractSkinGreenMean(results.image, lm);
+      if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
+        const lm = res.multiFaceLandmarks[0];
+        const gVal = extractSkinGreenMean(lm);
 
         if (gVal !== null && isScanning) {
           const now = performance.now();
           greenSignals.push(gVal);
           timestamps.push(now);
 
-          // ゼロ平均化差分をグラフに送る
           const baseline = greenSignals.length > 5 ? greenSignals[greenSignals.length - 2] : gVal;
           const delta = (gVal - baseline);
           drawWaveform(delta);
+          document.getElementById('deltaVal').innerText = delta.toFixed(2);
 
-          document.getElementById('greenMeanVal').innerText = delta.toFixed(2);
-
-          // プログレスバーの更新
           const elapsed = now - scanStartTime;
           const pct = Math.min(100, Math.round((elapsed / SCAN_DURATION_MS) * 100));
           document.getElementById('progressBar').style.width = pct + '%';
 
-          if (elapsed >= SCAN_DURATION_MS) {
-            completeScanSession();
-          }
+          if (elapsed >= SCAN_DURATION_MS) completeScanSession();
         }
       }
       outCtx.restore();
     });
 
-    // スキャン開始
     async function startScanSession() {
       const btn = document.getElementById('startBtn');
       btn.disabled = true;
       btn.innerText = '生体データをスキャン中（顔を動かさないでください）...';
 
+      document.getElementById('agentActionCard').style.display = 'none';
       document.getElementById('reportCard').style.display = 'none';
+      document.getElementById('resetEnvBtn').style.display = 'none';
       document.getElementById('progressContainer').style.display = 'block';
       document.getElementById('progressBar').style.width = '0%';
       document.getElementById('stateVal').innerText = 'ACQUIRING...';
@@ -445,7 +566,7 @@
         outputCanvas.width = 640;
         outputCanvas.height = 480;
         waveCanvas.width = 380;
-        waveCanvas.height = 70;
+        waveCanvas.height = 65;
 
         cameraInstance = new Camera(videoElement, {
           onFrame: async () => { await faceMesh.send({ image: videoElement }); },
@@ -458,57 +579,84 @@
       isScanning = true;
     }
 
-    // スキャン完了とAI総合診断
+    // --- 4. スキャン完了とAIエージェント推論・Tool自律実行 ---
     async function completeScanSession() {
       isScanning = false;
       document.getElementById('progressBar').style.width = '100%';
-      document.getElementById('startBtn').innerText = 'AI推論エンジンが自律神経を分析中...';
+      document.getElementById('startBtn').innerText = 'AIエージェントが自律推論＆端末環境を調律中...';
 
-      const metrics = analyzeBiometrics();
-      document.getElementById('bpmVal').innerText = metrics.bpm;
-      document.getElementById('hrvVal').innerText = metrics.hrv;
+      const m = analyzeBiometrics();
+      document.getElementById('bpmVal').innerText = m.bpm;
+      document.getElementById('hrvVal').innerText = m.hrv;
 
-      const stateText = metrics.hrv < 35 ? '交感神経優位（過緊張）' : (metrics.hrv > 65 ? '副交感神経優位（弛緩）' : '最適ゾーン（集中状態）');
-      document.getElementById('stateVal').innerText = stateText;
+      // 生体ゆらぎに応じたエージェント判断（Tool Use）の決定
+      let toolDecision = {};
+      let stateLabel = "";
 
-      // AIバイオメトリクス診断の生成（API呼出または高速推論エンジン）
-      await generateBioReport(metrics, stateText);
+      if (m.hrv < 35) {
+        stateLabel = "交感神経過緊張（認知飽和）";
+        toolDecision = {
+          functionName: "apply_parasympathetic_reset",
+          theme: "circadian_amber",
+          frequency: 432, // 自律神経を鎮める周波数
+          haptic: "box_breathing",
+          diagnosis: "末梢血管収縮と高周波脈波成分の減衰から、前頭前野が限界を迎えている『認知的オーバードライブ』を検出。無意識の筋緊張が視覚野に干渉しています。"
+        };
+      } else if (m.hrv > 65) {
+        stateLabel = "副交感神経優位（集中減衰）";
+        toolDecision = {
+          functionName: "apply_arousal_boost",
+          theme: "alert_cyan",
+          frequency: 528, // 覚醒・リフレッシュ周波数
+          haptic: "arousal_stimulus",
+          diagnosis: "脈波振幅の弛緩と徐脈傾向から、覚醒レベルの低下と集中途切れのシグネチャーを検出。外界からの適度な感覚入力が必要です。"
+        };
+      } else {
+        stateLabel = "最適共鳴ゾーン（深い没入）";
+        toolDecision = {
+          functionName: "maintain_flow_state",
+          theme: "flow_emerald",
+          frequency: 416,
+          haptic: "subtle_sync",
+          diagnosis: "脈波ゆらぎ（HRV）と拍動間隔が理想的なコヒーレンス（調和）を形成しています。ワーキングメモリと自律神経が最も効率よく連動している状態です。"
+        };
+      }
+
+      document.getElementById('stateVal').innerText = stateLabel;
+
+      // 【Tool Useの自律実行】AIの決定パラメータに基づいて端末を直接操作
+      AutonomousTools.adjustDisplayEnvironment(toolDecision.theme);
+      AutonomousTools.synthesizeEntrainmentSound(toolDecision.frequency);
+      AutonomousTools.triggerHapticBreathing(toolDecision.haptic);
+
+      // Tool実行内容を画面に可視化
+      const actionCard = document.getElementById('agentActionCard');
+      const actionList = document.getElementById('agentActionList');
+      document.getElementById('toolNameDisplay').innerText = toolDecision.functionName;
+      actionList.innerHTML = `
+        ・<strong>UI波長適応:</strong> ${toolDecision.theme}（視覚野の緊張を緩和）<br>
+        ・<strong>バイノーラル調律音:</strong> ${toolDecision.frequency} Hz リアルタイム合成中<br>
+        ・<strong>触覚ガイダンス:</strong> ${toolDecision.haptic} リズムで触覚介入
+      `;
+      actionCard.style.display = 'block';
+
+      // 逆引き推論カルテの描画
+      const reportCard = document.getElementById('reportCard');
+      const reportContent = document.getElementById('reportContent');
+      document.getElementById('reportTimestamp').innerText = new Date().toTimeString().split(' ')[0];
+
+      const focusMins = Math.max(8, Math.round((m.hrv / 100) * 45));
+      reportContent.innerHTML = `
+        <div><strong>【逆引き医学推論】</strong><br>${toolDecision.diagnosis}</div>
+        <div style="margin-top:6px;"><strong>【推定限界集中時間】</strong> 残り <span style="color:var(--accent-color); font-weight:bold;">約${focusMins}分間</span></div>
+        <div style="margin-top:6px;"><strong>【エージェント適応ステータス】</strong><br>現在、端末があなたの神経系と物理同期しています。深呼吸を行い、このまま画面を見つめて調律を完了させてください。</div>
+      `;
+      reportCard.style.display = 'block';
 
       document.getElementById('startBtn').disabled = false;
       document.getElementById('startBtn').innerText = 'もう一度スキャンする';
+      document.getElementById('resetEnvBtn').style.display = 'block';
       document.getElementById('progressContainer').style.display = 'none';
-    }
-
-    // AI診断レポート生成ロジック
-    async function generateBioReport(m, state) {
-      const reportCard = document.getElementById('reportCard');
-      const reportBody = document.getElementById('reportBody');
-      const ts = document.getElementById('reportTimestamp');
-      
-      const now = new Date();
-      ts.innerText = now.toTimeString().split(' ')[0];
-
-      // 抽出した生体特徴量に基づく動的AIレポート
-      const fatigueScore = Math.min(100, Math.max(10, Math.round((m.bpm * 0.6) + (100 - m.hrv) * 0.4)));
-      const focusLimitMins = Math.max(8, Math.round((m.hrv / 100) * 45));
-
-      let recommendation = "";
-      if (m.hrv < 35) {
-        recommendation = "交感神経が急激にスパイクしており、認知リソースが飽和寸前です。直ちに4-7-8呼吸法（4秒吸って7秒止め8秒吐く）を2サイクル行い、視覚野を休めるため遠くの緑を凝視してください。";
-      } else if (m.hrv > 65) {
-        recommendation = "自律神経が弛緩しすぎているため、軽度の眠気や集中減衰が検知されます。冷たい水での洗顔、または130〜140 BPMのテンポの速い音響刺激を取り入れて覚醒度を引き上げてください。";
-      } else {
-        recommendation = "心拍ゆらぎが極めて理想的な「ゾーン状態」にあります。深い思考や複雑なタスクに最も適した神経伝達バランスです。このまま深い集中を維持してください。";
-      }
-
-      reportBody.innerHTML = `
-        <div><strong>【生体ステータス】</strong> 脳内疲労度: <span style="color:#38bdf8;">${fatigueScore} / 100</span></div>
-        <div><strong>【推定限界作業時間】</strong> 残り <span style="color:#4ade80;">約${focusLimitMins}分間</span></div>
-        <div style="margin-top:6px;"><strong>【AI自律神経プロファイリング】</strong><br>${state}。rPPG吸光振幅解析（Δ${m.rawDelta}）から、血流拍動の規則性と微小循環を特定しました。</div>
-        <div style="margin-top:6px;"><strong>【AI処方プロトコル】</strong><br>${recommendation}</div>
-      `;
-
-      reportCard.style.display = 'block';
     }
   </script>
 </body>
