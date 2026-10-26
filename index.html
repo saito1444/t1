@@ -101,7 +101,7 @@
       object-fit: cover;
       transform: scaleX(-1);
       pointer-events: none;
-      opacity: 0; /* 非表示にしてCanvasのみ表示 */
+      opacity: 0;
     }
     #outputCanvas {
       position: absolute;
@@ -381,7 +381,7 @@
       cursor: pointer;
       margin-top: 10px;
       position: relative;
-      z-index: 30;
+      z-index: 100;
       touch-action: manipulation;
       user-select: none;
       box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
@@ -407,7 +407,7 @@
       cursor: pointer;
       margin-top: 8px;
       position: relative;
-      z-index: 30;
+      z-index: 100;
       touch-action: manipulation;
     }
     .btn-reset:active { transform: scale(0.98); }
@@ -499,7 +499,8 @@
   <button id="resetEnvBtn" class="btn-reset" onclick="resetEnvironment()">画面の適応モードを解除</button>
 
   <script>
-    const WORKER_ENDPOINT = "https://mizki1.6wvgd82df8.workers.dev"[cite: 4];
+    // 構文エラーを完全排除したエンドポイント定義
+    const WORKER_ENDPOINT = "https://mizki1.6wvgd82df8.workers.dev";
 
     const videoElement = document.getElementById('inputVideo');
     const outputCanvas = document.getElementById('outputCanvas');
@@ -816,7 +817,6 @@
       document.getElementById('equivVal').innerText = '--';
       document.getElementById('stateNoteDisplay').innerText = '💡 戦闘モードか休息モードか';
 
-      // ボタンの活性化を必ず保証
       const startBtn = document.getElementById('startBtn');
       startBtn.disabled = false;
       startBtn.innerText = `${currentModeSeconds}秒間の生体計測を開始`;
@@ -832,7 +832,6 @@
       outCtx.save();
       outCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
       
-      // 鏡像反転描画
       outCtx.translate(outputCanvas.width, 0);
       outCtx.scale(-1, 1);
       outCtx.drawImage(res.image, 0, 0, outputCanvas.width, outputCanvas.height);
@@ -874,7 +873,7 @@
       btn.innerText = `生体データを計測中（${currentModeSeconds}秒間、静止してください）...`;
 
       resetEnvironment();
-      btn.disabled = true; // resetEnvironmentで解除されるため再ロック
+      btn.disabled = true;
       btn.innerText = `生体データを計測中（${currentModeSeconds}秒間、静止してください）...`;
 
       document.getElementById('progressContainer').style.display = 'block';
@@ -939,7 +938,6 @@
         console.warn('Worker通信失敗・ローカルフォールバック実行:', e);
       }
 
-      // フォールバック（通信失敗や未定義時にも必ず結果を生成）
       if (!aiResult) {
         const theme = m.hrv < 38 ? 'amber' : (m.hrv > 62 ? 'cyan' : 'emerald');
         aiResult = {
@@ -1041,7 +1039,6 @@
       `;
       reportCard.style.display = 'block';
 
-      // どのような場合でもボタンのロックを確実に解除
       startBtn.disabled = false;
       startBtn.innerText = `${currentModeSeconds}秒間の生体計測を開始`;
       document.getElementById('resetEnvBtn').style.display = 'block';
