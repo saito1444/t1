@@ -83,6 +83,7 @@
       font-weight: 700;
     }
 
+    /* カメラ比率崩れを防ぐアスペクト比保護コンテナ */
     .scanner-box {
       position: relative;
       width: 100%;
@@ -94,12 +95,20 @@
       border: 2px solid #1e293b;
       transition: border-color 0.8s ease, box-shadow 0.8s ease;
     }
-    video, #outputCanvas {
+    video {
       position: absolute;
       width: 100%;
       height: 100%;
       object-fit: cover;
       transform: scaleX(-1);
+      pointer-events: none;
+      display: none; /* Canvas側へ直接転写して描画 */
+    }
+    #outputCanvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
       pointer-events: none;
     }
 
@@ -214,8 +223,20 @@
       padding: 8px 10px;
     }
     .metric-card span { font-size: 9px; color: #94a3b8; display: block; margin-bottom: 2px; }
-    .metric-card strong { font-size: 15px; color: #f1f5f9; font-family: monospace; }
+    .metric-card strong { font-size: 14px; color: #f1f5f9; font-family: monospace; display: block; }
     .val-accent { color: #38bdf8; }
+
+    /* 専門用語の日常翻訳注釈バッジ */
+    .metric-note {
+      font-size: 8.5px;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
+      border-left: 2px solid #38bdf8;
+      padding: 2px 4px;
+      margin-top: 4px;
+      border-radius: 0 4px 4px 0;
+      line-height: 1.3;
+    }
 
     .agent-action-card {
       width: 100%;
@@ -273,6 +294,17 @@
       display: block;
       margin-bottom: 2px;
     }
+    .section-note {
+      display: inline-block;
+      font-size: 10px;
+      color: #f59e0b;
+      background: rgba(245, 158, 11, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-top: 4px;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
     .timeline-box {
       background: rgba(2, 6, 23, 0.7);
       border-left: 2px solid #38bdf8;
@@ -285,6 +317,44 @@
       color: #cbd5e1;
     }
     .timeline-item:last-child { margin-bottom: 0; }
+
+    /* 行動処方箋（推奨アクション）カード */
+    .prescription-box {
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid #10b981;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 6px;
+    }
+    .prescription-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #10b981;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .prescription-reason {
+      font-size: 10px;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+    .prescription-steps {
+      font-size: 10.5px;
+      color: #f8fafc;
+      line-height: 1.5;
+      padding-left: 14px;
+      margin: 0;
+    }
+    .prescription-avoid {
+      font-size: 9.5px;
+      color: #f43f5e;
+      margin-top: 6px;
+      border-top: 1px dashed rgba(244, 63, 94, 0.3);
+      padding-top: 4px;
+    }
 
     .reference-box {
       margin-top: 10px;
@@ -391,20 +461,24 @@
 
   <div class="metrics-grid">
     <div class="metric-card">
-      <span>推定心拍数</span>
+      <span>推定心拍数 (BPM)</span>
       <strong id="bpmVal" class="val-accent">--</strong>
+      <div class="metric-note">💡 1分間の心臓の拍動ペース</div>
     </div>
     <div class="metric-card">
-      <span>自律神経ゆらぎ (HRV)</span>
+      <span>心拍変動 (HRV / RMSSD)</span>
       <strong id="hrvVal" class="val-accent">--</strong>
+      <div class="metric-note">💡 脳と心の「余裕度・柔軟性」</div>
     </div>
     <div class="metric-card">
       <span>自律神経バランス</span>
       <strong id="stateVal" style="font-size:12px;">待機中</strong>
+      <div class="metric-note" id="stateNoteDisplay">💡 戦闘モードか休息モードか</div>
     </div>
     <div class="metric-card">
       <span>体内負荷換算</span>
       <strong id="equivVal" style="font-size:12px;">--</strong>
+      <div class="metric-note">💡 日常行動で例えた負荷レベル</div>
     </div>
   </div>
 
@@ -428,8 +502,7 @@
   <button id="resetEnvBtn" class="btn-reset" onclick="resetEnvironment()">画面の適応モードを解除</button>
 
   <script>
-    // Cloudflare Workers中継エンドポイント（キーはサーバー側で秘匿）
-    const WORKER_ENDPOINT = "https://mizki1.6wvgd82df8.workers.dev";
+    const WORKER_ENDPOINT = "https://mizki1.6wvgd82df8.workers.dev"[cite: 4];
 
     const videoElement = document.getElementById('inputVideo');
     const outputCanvas = document.getElementById('outputCanvas');
@@ -744,6 +817,7 @@
       document.getElementById('hrvVal').innerText = '--';
       document.getElementById('stateVal').innerText = '待機中';
       document.getElementById('equivVal').innerText = '--';
+      document.getElementById('stateNoteDisplay').innerText = '💡 戦闘モードか休息モードか';
 
       bp_x1 = 0; bp_x2 = 0; bp_y1 = 0; bp_y2 = 0;
       lastValidSignal = 0;
@@ -751,10 +825,17 @@
 
     const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
     faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+    
+    // 比率圧縮を防ぎながらCanvas描画
     faceMesh.onResults((res) => {
       outCtx.save();
       outCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+      
+      // 鏡像反転描画
+      outCtx.translate(outputCanvas.width, 0);
+      outCtx.scale(-1, 1);
       outCtx.drawImage(res.image, 0, 0, outputCanvas.width, outputCanvas.height);
+      outCtx.restore();
 
       if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
         const lm = res.multiFaceLandmarks[0];
@@ -784,7 +865,6 @@
         document.getElementById('silhouetteSvg').style.stroke = 'rgba(56, 189, 248, 0.45)';
         if (!isScanning) document.getElementById('guideHint').innerText = '枠内に顔を合わせてください';
       }
-      outCtx.restore();
     });
 
     async function startScanSession() {
@@ -806,18 +886,23 @@
       try {
         if (!cameraInstance) {
           const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: 640, height: 480 },
+            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
             audio: false
           });
           videoElement.srcObject = stream;
-          outputCanvas.width = 640;
-          outputCanvas.height = 480;
+          await videoElement.play();
+
+          // カメラ映像の実解像度に合わせてCanvasを設定（比率圧縮を防止）
+          const vw = videoElement.videoWidth || 640;
+          const vh = videoElement.videoHeight || 480;
+          outputCanvas.width = vw;
+          outputCanvas.height = vh;
           waveCanvas.width = 380;
           waveCanvas.height = 60;
 
           cameraInstance = new Camera(videoElement, {
             onFrame: async () => { await faceMesh.send({ image: videoElement }); },
-            width: 640, height: 480
+            width: vw, height: vh
           });
           await cameraInstance.start();
         }
@@ -861,18 +946,30 @@
             '生体フィードバック触覚振動を実行'
           ],
           stateLabel: theme === 'amber' ? '交感神経過緊張' : (theme === 'cyan' ? '集中減衰' : '至適ゾーン'),
+          stateNote: theme === 'amber' ? '心と体が戦闘モードに入っています' : (theme === 'cyan' ? '脳が休息モードに入っています' : '理想的なゾーン状態を維持しています'),
           equivLabel: theme === 'amber' ? '緊迫した面接直前相当' : (theme === 'cyan' ? '仮眠直前の弛緩相当' : 'ゾーン没入相当'),
           discrepancy: `拍動間隔平均${Math.round(60000/m.bpm)}msに対しHRVが${m.hrv}msを記録。血管収縮シグナルに顕著な内部負荷が検出されています。`,
+          discrepancyNote: '顔は冷静に見えますが、体内の自律神経は強いストレスに対処しています。',
           focusLimitMins: Math.max(10, Math.round((m.hrv / 100) * 45)),
           timeline: [
             `開始12分後：視覚探索速度が現在の82%まで減退`,
             `開始24分後：首周辺の筋電位上昇に伴う姿勢前傾の固定化`,
             `開始36分後：ワーキングメモリのオーバーフローによる誤判定の頻発`
-          ]
+          ],
+          prescription: {
+            title: theme === 'amber' ? '5分間の視覚遮断と呼吸同期' : (theme === 'cyan' ? '15分間の仮眠または軽い歩行' : 'このまま30分間の集中作業を完遂'),
+            reason: theme === 'amber' ? '交感神経が昂っているため激しい運動は逆効果です。まず心拍を落とす必要があります。' : '覚醒度が落ちているため刺激を入れる必要があります。',
+            actionSteps: [
+              '画面から目を離し、1分間目を閉じる',
+              '息を4秒吸って8秒かけてゆっくり吐く'
+            ],
+            avoidAction: 'カフェインの追加摂取、激しい有酸素運動'
+          }
         };
       }
 
       document.getElementById('stateVal').innerText = aiResult.stateLabel;
+      document.getElementById('stateNoteDisplay').innerText = `💡 ${aiResult.stateNote || '自律神経の傾き'}`;
       document.getElementById('equivVal').innerText = aiResult.equivLabel;
 
       AutonomousTools.applyDisplayTheme(aiResult.theme);
@@ -889,6 +986,15 @@
       document.getElementById('reportTimestamp').innerText = new Date().toTimeString().split(' ')[0];
 
       let timelineHtml = aiResult.timeline.map(item => `<div class="timeline-item">・${item}</div>`).join('');
+      
+      const pres = aiResult.prescription || {
+        title: "5分間の休息",
+        reason: "疲労蓄積防止のため",
+        actionSteps: ["深呼吸を行う", "水分を補給する"],
+        avoidAction: "作業の強行"
+      };
+
+      let stepsHtml = pres.actionSteps.map(s => `<li>${s}</li>`).join('');
 
       reportContent.innerHTML = `
         <div class="report-section" style="color:#38bdf8; font-size:10px; margin-bottom:6px;">
@@ -897,6 +1003,7 @@
         <div class="report-section">
           <strong>【外見と体内の矛盾分析】</strong>
           ${aiResult.discrepancy}
+          ${aiResult.discrepancyNote ? `<br><div class="section-note">💡 つまり：${aiResult.discrepancyNote}</div>` : ''}
         </div>
         <div class="report-section">
           <strong>【体内負荷換算の目安】</strong>
@@ -912,6 +1019,17 @@
             ${timelineHtml}
           </div>
         </div>
+
+        <!-- あなたへの行動処方箋 -->
+        <div class="prescription-box">
+          <div class="prescription-title">💊 推奨アクション：${pres.title}</div>
+          <div class="prescription-reason">【処方理由】${pres.reason}</div>
+          <ul class="prescription-steps">
+            ${stepsHtml}
+          </ul>
+          <div class="prescription-avoid">⚠️ 逆効果なNG行動：${pres.avoidAction}</div>
+        </div>
+
         <div class="reference-box">
           <span>【学術基準およびガイドライン参照】</span>
           ・心拍変動指標（HRV/RMSSD）：欧州心臓病学会・北米ペーシング電気生理学会合同タスクフォース基準（Task Force, 1996）に準拠<br>
