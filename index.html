@@ -197,7 +197,7 @@
     .spectrum-panel {
       width: 100%;
       max-width: 380px;
-      height: 110px;
+      height: 120px;
       background: #02050c;
       border: 1px solid #1e293b;
       border-radius: 8px;
@@ -252,7 +252,6 @@
       line-height: 1.3;
     }
 
-    /* 日々のバイタル推移サマリーカード */
     .baseline-card {
       width: 100%;
       max-width: 380px;
@@ -267,6 +266,33 @@
       align-items: center;
     }
     .baseline-item b { color: #38bdf8; }
+
+    /* 今回の測定結果を明確に記録したログ専用カード */
+    .recorded-log-card {
+      width: 100%;
+      max-width: 380px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1.5px solid #10b981;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-top: 8px;
+      display: none;
+    }
+    .recorded-log-header {
+      font-size: 11px;
+      font-weight: 700;
+      color: #10b981;
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(16, 185, 129, 0.3);
+      padding-bottom: 4px;
+      margin-bottom: 6px;
+    }
+    .recorded-log-body {
+      font-size: 10.5px;
+      line-height: 1.6;
+      color: #f1f5f9;
+    }
 
     .btn-group {
       width: 100%;
@@ -471,7 +497,6 @@
       margin-bottom: 2px;
     }
 
-    /* 過去履歴ログリスト */
     .history-card {
       width: 100%;
       max-width: 380px;
@@ -492,7 +517,7 @@
       padding-bottom: 4px;
     }
     .history-list {
-      max-height: 120px;
+      max-height: 140px;
       overflow-y: auto;
       font-size: 10px;
       color: #cbd5e1;
@@ -500,7 +525,7 @@
     .history-row {
       display: flex;
       justify-content: space-between;
-      padding: 4px 0;
+      padding: 5px 0;
       border-bottom: 1px dashed #1e293b;
     }
     .history-row:last-child { border-bottom: none; }
@@ -573,6 +598,7 @@
     <div class="progress-bar" id="progressBar"></div>
   </div>
 
+  <!-- 振幅スペクトル描画キャンバス（動的オートスケール実装） -->
   <div class="spectrum-panel">
     <div class="spectrum-title">rPPG AMPLITUDE SPECTRUM (0 - 3.0 Hz)</div>
     <canvas id="spectrumCanvas"></canvas>
@@ -601,10 +627,20 @@
     </div>
   </div>
 
-  <!-- 個人ベースライン表示領域 -->
   <div class="baseline-card" id="baselineCard">
     <div class="baseline-item">個人ベースライン: <b id="baseAvgBpm">--</b> bpm / HRV <b id="baseAvgHrv">--</b> ms</div>
     <div class="baseline-item" id="baseCountText">累計計測: 0回</div>
+  </div>
+
+  <!-- 最新の記録を明示するログカード -->
+  <div class="recorded-log-card" id="recordedLogCard">
+    <div class="recorded-log-header">
+      <span>最新測定ログをブラウザに永続記録完了</span>
+      <span id="logRecordedTime">--:--:--</span>
+    </div>
+    <div class="recorded-log-body" id="logRecordedBody">
+      <!-- JavaScriptで動的挿入 -->
+    </div>
   </div>
 
   <div id="agentActionCard" class="agent-action-card">
@@ -629,11 +665,10 @@
   </div>
   <button id="resetEnvBtn" class="btn-reset" onclick="resetEnvironment()">画面の適応モードを解除</button>
 
-  <!-- 過去のバイタル履歴一覧 -->
   <div class="history-card" id="historyCard">
     <div class="history-header">
-      <span>過去のバイタル測定履歴</span>
-      <button class="btn-clear-history" onclick="clearVitalHistory()">履歴を初期化</button>
+      <span>蓄積バイタル履歴一覧 (日跨ぎ保存)</span>
+      <button class="btn-clear-history" onclick="clearVitalHistory()">全履歴を初期化</button>
     </div>
     <div class="history-list" id="historyList">
       <div style="color:#64748b; text-align:center; padding:6px 0;">まだ測定履歴がありません</div>
@@ -679,7 +714,7 @@
       try {
         const history = getStoredHistory();
         history.unshift(record);
-        if (history.length > 50) history.pop(); // 直近50件まで保持
+        if (history.length > 50) history.pop();
         localStorage.setItem('rppg_vital_history', JSON.stringify(history));
         updateHistoryUI();
       } catch (e) {
@@ -690,6 +725,7 @@
     function clearVitalHistory() {
       if (confirm('蓄積された測定履歴を消去し、ベースラインを初期化しますか？')) {
         localStorage.removeItem('rppg_vital_history');
+        document.getElementById('recordedLogCard').style.display = 'none';
         updateHistoryUI();
       }
     }
@@ -736,12 +772,12 @@
       baseAvgHrv.innerText = Math.round(totalHrv / history.length);
       baseCountText.innerText = `累計計測: ${history.length}回`;
 
-      listEl.innerHTML = history.slice(0, 5).map(h => {
+      listEl.innerHTML = history.slice(0, 10).map(h => {
         return `
           <div class="history-row">
-            <span>${h.date.split(' ')[0].slice(5)} ${h.date.split(' ')[1].slice(0, 5)} (${h.mode}s)</span>
-            <span>BPM: <b>${h.bpm}</b> / HRV: <b>${h.hrv}ms</b></span>
-            <span style="color:#38bdf8;">${h.stateLabel}</span>
+            <span>${h.date.split(' ')[0]} ${h.date.split(' ')[1]} (${h.mode}s)</span>
+            <span>BPM: <b>${h.bpm}</b> / HRV: <b>${h.hrv}ms</b> / SNR: <b>${h.snr}dB</b></span>
+            <span style="color:#38bdf8; font-weight:700;">${h.stateLabel}</span>
           </div>
         `;
       }).join('');
@@ -811,28 +847,12 @@
         const G = totalG / totalCount;
         const B = totalB / totalCount;
 
-        rgbBuffer.r.push(R);
-        rgbBuffer.g.push(G);
-        rgbBuffer.b.push(B);
-        if (rgbBuffer.r.length > 90) {
-          rgbBuffer.r.shift();
-          rgbBuffer.g.shift();
-          rgbBuffer.b.shift();
-        }
-
-        const meanR = rgbBuffer.r.reduce((a, b) => a + b, 0) / rgbBuffer.r.length;
-        const meanG = rgbBuffer.g.reduce((a, b) => a + b, 0) / rgbBuffer.g.length;
-        const meanB = rgbBuffer.b.reduce((a, b) => a + b, 0) / rgbBuffer.b.length;
-
-        const normR = meanR ? R / meanR - 1 : 0;
-        const normG = meanG ? G / meanG - 1 : 0;
-        const normB = meanB ? B / meanB - 1 : 0;
-
-        const Xs = 3 * normR - 2 * normG;
-        const Ys = 1.5 * normR + normG - 1.5 * normB;
+        // CHROM色度信号の直接合成（感度を回復）
+        const Xs = 3 * R - 2 * G;
+        const Ys = 1.5 * R + G - 1.5 * B;
         const raw = Xs - 0.7 * Ys;
 
-        if (Math.abs(raw - lastValidSignal) > 5.0 && lastValidSignal !== 0) {
+        if (Math.abs(raw - lastValidSignal) > 15.0 && lastValidSignal !== 0) {
           return lastValidSignal;
         }
         lastValidSignal = raw;
@@ -959,8 +979,9 @@
       }
     }
 
+    /* === 動的オートスケール型振幅スペクトル描画（底辺張り付きを完全解消） === */
     function drawAmplitudeSpectrum(signals, times) {
-      if (signals.length < 32) return { snrDb: "0.0", peakFreq: 0 };
+      if (signals.length < 24) return { snrDb: "0.0", peakFreq: 0 };
 
       const N = 128;
       const { resampledSignals } = resampleUniform(signals.slice(-120), times.slice(-120), 30.0);
@@ -988,7 +1009,7 @@
       const numBins = Math.floor(maxFreq / freqStep);
 
       const amps = [];
-      let maxAmp = 0.001;
+      let maxAmp = 0.00001;
       let peakIdx = 0;
 
       for (let i = 0; i < numBins; i++) {
@@ -1018,10 +1039,11 @@
 
       specCtx.clearRect(0, 0, specCanvas.width, specCanvas.height);
 
-      const padL = 28, padR = 12, padT = 16, padB = 18;
+      const padL = 28, padR = 12, padT = 20, padB = 18;
       const plotW = specCanvas.width - padL - padR;
       const plotH = specCanvas.height - padT - padB;
 
+      // 目盛りとグリッド線
       specCtx.strokeStyle = '#1e293b';
       specCtx.lineWidth = 1;
       specCtx.font = '8px monospace';
@@ -1037,11 +1059,12 @@
         specCtx.fillText(f.toFixed(1), x, specCanvas.height - 4);
       }
 
+      // 動的オートスケール（ピーク値に合わせて山の高さを最適化）
+      const displayMax = Math.max(0.01, maxAmp * 1.25);
+
       specCtx.strokeStyle = currentWaveColor;
       specCtx.lineWidth = 2.0;
       specCtx.beginPath();
-
-      const displayMax = Math.max(1.2, maxAmp * 1.3);
 
       for (let i = 0; i < numBins; i++) {
         const x = padL + (i / (numBins - 1)) * plotW;
@@ -1052,6 +1075,7 @@
       }
       specCtx.stroke();
 
+      // 呼吸帯域マーカー（0.4 Hz）
       const respX = padL + (0.4 / 3.0) * plotW;
       specCtx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
       specCtx.setLineDash([4, 2, 1, 2]);
@@ -1060,8 +1084,9 @@
       specCtx.lineTo(respX, padT + plotH);
       specCtx.stroke();
       specCtx.fillStyle = '#94a3b8';
-      specCtx.fillText('Resp 0.4Hz', respX, padT + 8);
+      specCtx.fillText('Resp 0.4Hz', respX, padT - 6);
 
+      // 心拍数マーカー（Estimated HR：山頂に自動追従）
       if (peakFreq >= 0.75) {
         const hrX = padL + (peakFreq / 3.0) * plotW;
         specCtx.strokeStyle = '#f43f5e';
@@ -1071,7 +1096,7 @@
         specCtx.lineTo(hrX, padT + plotH);
         specCtx.stroke();
         specCtx.fillStyle = '#f43f5e';
-        specCtx.fillText(`HR ${estimatedBpm}bpm`, hrX, padT + 18);
+        specCtx.fillText(`HR ${estimatedBpm}bpm`, hrX, padT - 6);
       }
 
       specCtx.setLineDash([]);
@@ -1204,6 +1229,7 @@
       document.getElementById('agentActionCard').style.display = 'none';
       document.getElementById('reportCard').style.display = 'none';
       document.getElementById('resetEnvBtn').style.display = 'none';
+      document.getElementById('recordedLogCard').style.display = 'none';
       document.getElementById('guideHint').innerText = isCameraReady ? '枠内に顔を合わせ、計測開始を押してください' : '1. 先に「カメラを起動」を押してください';
       document.getElementById('bpmVal').innerText = '--';
       document.getElementById('hrvVal').innerText = '--';
@@ -1290,7 +1316,7 @@
           outputCanvas.width = 640;
           outputCanvas.height = 480;
           specCanvas.width = 380;
-          specCanvas.height = 110;
+          specCanvas.height = 120;
 
           cameraInstance = new Camera(videoElement, {
             onFrame: async () => { await faceMesh.send({ image: videoElement }); },
@@ -1431,7 +1457,7 @@
         };
       }
 
-      // localStorageへ今回の測定結果を自動蓄積
+      // localStorageへ永続保存
       const now = new Date();
       const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       saveVitalRecord({
@@ -1442,6 +1468,15 @@
         stateLabel: aiResult.stateLabel,
         mode: currentModeSeconds
       });
+
+      // 最新の記録完了通知カードを更新・表示
+      document.getElementById('logRecordedTime').innerText = dateStr;
+      document.getElementById('logRecordedBody').innerHTML = `
+        計測日時: <b>${dateStr}</b> (${currentModeSeconds}秒スキャン)<br>
+        測定結果: 心拍数 <b>${m.bpm}</b> bpm / HRV <b>${m.hrv}</b> ms / 信号品質 <b>${currentSnr}</b> dB<br>
+        AI診断状態: <b>${aiResult.stateLabel}</b> (${aiResult.equivLabel})
+      `;
+      document.getElementById('recordedLogCard').style.display = 'block';
 
       document.getElementById('stateVal').innerText = aiResult.stateLabel;
       document.getElementById('stateNoteDisplay').innerText = aiResult.stateNote || '自律神経の傾き';
@@ -1542,7 +1577,6 @@
       document.getElementById('guideHint').innerText = '診断が完了しました。再計測可能です。';
     }
 
-    // ページ読み込み時に過去履歴UIを展開
     window.addEventListener('DOMContentLoaded', () => {
       updateHistoryUI();
     });
