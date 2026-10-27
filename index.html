@@ -907,7 +907,7 @@
       outCtx.restore();
     }
 
-    // 0.7Hz - 2.8Hz (42 - 168 bpm) まで通過させる広帯域バターワースIIRフィルタ
+    // 0.8Hz - 2.8Hz (48 - 168 bpm) 帯域を通過させる広帯域バターワースIIRフィルタ
     function applyBandpassFilter(input) {
       const b0 = 0.0825, b1 = 0, b2 = -0.0825;
       const a1 = -1.1856, a2 = 0.3845;
@@ -986,12 +986,11 @@
       }
     }
 
-    /* === 制限撤廃型 高解像度振幅スペクトル解析（45〜168 bpm対応） === */
+    /* === 呼吸低周波ノイズ抑制・適応的スペクトル解析（48〜168 bpm） === */
     function drawAmplitudeSpectrum(signals, times) {
       if (signals.length < 24) return { snrDb: "0.0", peakFreq: 0, estimatedBpm: 72 };
 
       const N = 512;
-      // 過去蓄積された全フレームから直近最大300フレーム（約10秒窓）を動的に利用
       const windowFrames = Math.min(300, signals.length);
       const { resampledSignals } = resampleUniform(signals.slice(-windowFrames), times.slice(-windowFrames), 30.0);
       
@@ -1018,7 +1017,7 @@
       const numBins = Math.floor(maxFreq / freqStep);
 
       const amps = [];
-      let maxAmpInBand = 0.00001;
+      let maxWeightedScore = 0.00001;
       let peakIdx = 0;
 
       for (let i = 0; i < numBins; i++) {
@@ -1026,15 +1025,26 @@
         amps.push(mag);
         const freq = i * freqStep;
 
-        // 【制限撤廃】安静時から運動後まで対応する帯域：0.75Hz〜2.80Hz（45〜168 bpm）
-        if (freq >= 0.75 && freq <= 2.80 && mag > maxAmpInBand) {
-          maxAmpInBand = mag;
-          peakIdx = i;
+        if (freq >= 0.85 && freq <= 2.80) {
+          // 【最重要改善】運動直後の荒い呼吸（0.85〜1.0Hz付近＝51〜60bpm）の過剰な振幅を抑制する周波数重み付け
+          let weight = 1.0;
+          if (freq < 1.05) {
+            // 63bpm未満の低周波は息切れノイズの影響が大きいためペナルティ減衰
+            weight = 0.45 + (freq - 0.85) * 2.75;
+          } else if (freq >= 1.70) {
+            // 102bpm以上の高心拍帯域は生体減衰を補正して適正評価
+            weight = 1.25;
+          }
+
+          const score = mag * weight;
+          if (score > maxWeightedScore) {
+            maxWeightedScore = score;
+            peakIdx = i;
+          }
         }
       }
 
       const detectedFreq = peakIdx * freqStep;
-      // 固定値バイアスを完全に排除し、検出された周波数を直接採用
       const estimatedBpm = Math.round(detectedFreq * 60);
       lastDetectedBpm = estimatedBpm;
 
@@ -1050,7 +1060,6 @@
 
       specCtx.clearRect(0, 0, specCanvas.width, specCanvas.height);
 
-      // 上部パディングを拡張し、タイトル文字との被りを解消
       const padL = 28, padR = 12, padT = 26, padB = 18;
       const plotW = specCanvas.width - padL - padR;
       const plotH = specCanvas.height - padT - padB;
@@ -1087,7 +1096,7 @@
       }
       specCtx.stroke();
 
-      // 呼吸帯域（0.4Hz）マーカー（文字被りを防ぐためY位置を下にシフト）
+      // 呼吸帯域（0.4Hz）マーカー
       const respX = padL + (0.4 / 3.0) * plotW;
       specCtx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
       specCtx.setLineDash([4, 2, 1, 2]);
@@ -1098,8 +1107,8 @@
       specCtx.fillStyle = '#94a3b8';
       specCtx.fillText('Resp 0.4Hz', respX, padT + 8);
 
-      // 心拍数マーカー（運動後の高い山にも直接追従）
-      if (detectedFreq >= 0.75) {
+      // 心拍数マーカー（運動後の高心拍に追従）
+      if (detectedFreq >= 0.85) {
         const hrX = padL + (detectedFreq / 3.0) * plotW;
         specCtx.strokeStyle = '#f43f5e';
         specCtx.setLineDash([3, 3]);
@@ -1115,32 +1124,37 @@
       return { snrDb: snrVal, peakFreq: detectedFreq, estimatedBpm };
     }
 
-    /* === 60秒完全統合型 生体データ解析（108bpm制限撤廃） === */
+    /* === 適応的閾値型 生体ピーク検出（120bpm以上のピーク飛ばしを根絶） === */
     function analyzeBiometrics() {
       const minPoints = currentModeSeconds === 10 ? 40 : 200;
       if (rawSignals.length < minPoints) return { bpm: 72, hrv: 45, intervals: [800, 810] };
 
-      // 60秒間（または10秒間）蓄積されたすべての信号を等間隔リサンプリング
       const { resampledSignals, dt } = resampleUniform(rawSignals, timestamps, 30.0);
 
       const windowSize = 15;
       const detrended = [];
+      let sumSq = 0;
       for (let i = 0; i < resampledSignals.length; i++) {
         const start = Math.max(0, i - Math.floor(windowSize / 2));
         const end = Math.min(resampledSignals.length, i + Math.floor(windowSize / 2));
         let sum = 0;
         for (let j = start; j < end; j++) sum += resampledSignals[j];
-        detrended.push(resampledSignals[i] - (sum / (end - start)));
+        const val = resampledSignals[i] - (sum / (end - start));
+        detrended.push(val);
+        sumSq += val * val;
       }
 
-      // ピーク検出
+      // 【重要改善】信号のRMS振幅に応じた適応的閾値（振幅が微小な高心拍も確実に検出）
+      const rms = Math.sqrt(sumSq / detrended.length);
+      const adaptiveThreshold = Math.max(0.008, rms * 0.45);
+
       const peakIndices = [];
       for (let i = 2; i < detrended.length - 2; i++) {
         if (detrended[i] > detrended[i - 1] && 
             detrended[i] > detrended[i - 2] && 
             detrended[i] > detrended[i + 1] && 
             detrended[i] > detrended[i + 2] && 
-            detrended[i] > 0.03) {
+            detrended[i] > adaptiveThreshold) {
           peakIndices.push(i);
         }
       }
@@ -1152,20 +1166,23 @@
       if (peakIndices.length >= 3) {
         for (let i = 1; i < peakIndices.length; i++) {
           const diffMs = (peakIndices[i] - peakIndices[i - 1]) * dt;
-          // 40〜160 bpm 相当（375ms〜1500ms）まで許容範囲を完全開放
-          if (diffMs >= 375 && diffMs <= 1500) {
+          // 45〜170 bpm 相当（350ms〜1330ms）まで許容
+          if (diffMs >= 350 && diffMs <= 1330) {
             intervals.push(Math.round(diffMs));
           }
         }
 
         if (intervals.length >= 2) {
           const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-          const peakBpm = Math.round(60000 / avgInterval);
-          
-          // FFTのピーク結果と時間領域ピークの加重統合
-          bpm = lastDetectedBpm ? Math.round(lastDetectedBpm * 0.6 + peakBpm * 0.4) : peakBpm;
+          const timeBpm = Math.round(60000 / avgInterval);
 
-          // RMSSD（HRV）の厳密計算
+          // FFTピーク周波数が運動域（100bpm以上）を示している場合はFFT側をより信頼
+          if (lastDetectedBpm && lastDetectedBpm >= 100) {
+            bpm = Math.round(lastDetectedBpm * 0.75 + timeBpm * 0.25);
+          } else {
+            bpm = lastDetectedBpm ? Math.round(lastDetectedBpm * 0.5 + timeBpm * 0.5) : timeBpm;
+          }
+
           let diffSqSum = 0;
           for (let i = 1; i < intervals.length; i++) {
             diffSqSum += Math.pow(intervals[i] - intervals[i - 1], 2);
@@ -1174,9 +1191,8 @@
         }
       }
 
-      // クランプ制限を45〜165 bpmに開放（走った後の高心拍にも対応）
-      bpm = Math.min(165, Math.max(45, bpm));
-      hrv = Math.min(120, Math.max(12, hrv));
+      bpm = Math.min(170, Math.max(50, bpm));
+      hrv = Math.min(115, Math.max(10, hrv));
 
       return { bpm, hrv, intervals };
     }
@@ -1304,7 +1320,6 @@
           const filtered = applyBandpassFilter(rawVal);
           const elapsed = now - scanStartTime;
 
-          // 開始0.8秒間はウォームアップとして裏でフィルタ安定化
           if (elapsed < 800) {
             return;
           } else if (isWarmingUp) {
@@ -1411,7 +1426,6 @@
       const measureBtn = document.getElementById('measureBtn');
       measureBtn.innerText = 'AIが日次バイタル推移を深層解析中...';
 
-      // 蓄積された全フレームを統合解析
       const m = analyzeBiometrics();
       const specResult = drawAmplitudeSpectrum(rawSignals, timestamps);
       const currentSnr = specResult.snrDb || "3.5";
@@ -1429,7 +1443,7 @@
       }
 
       if (!aiResult) {
-        const isStressed = m.hrv < 38 || m.bpm > 85;
+        const isStressed = m.hrv < 38 || m.bpm > 90;
         const isDrowsy = m.hrv > 58 && m.bpm < 68;
         const theme = isStressed ? 'amber' : (isDrowsy ? 'cyan' : 'emerald');
 
@@ -1441,21 +1455,21 @@
             '生体フィードバック触覚振動を実行'
           ],
           stateLabel: theme === 'amber' ? '交感神経過緊張' : (theme === 'cyan' ? '覚醒水準減退' : '自律神経至適共鳴'),
-          stateNote: theme === 'amber' ? '心拍上昇または過積載による緊張状態' : (theme === 'cyan' ? '中枢性疲労による強い眠気' : '高い集中力を維持したゾーン状態'),
-          equivLabel: theme === 'amber' ? '運動直後または緊迫したプレゼン相当' : (theme === 'cyan' ? '長時間の単調作業による弛緩相当' : '深い没入作業相当'),
+          stateNote: theme === 'amber' ? '運動後または過積載による心拍上昇状態' : (theme === 'cyan' ? '中枢性疲労による強い眠気' : '高い集中力を維持したゾーン状態'),
+          equivLabel: theme === 'amber' ? '激しい運動直後または緊急対応相当' : (theme === 'cyan' ? '長時間の単調作業による弛緩相当' : '深い没入作業相当'),
           clinicalParams: {
             svr: theme === 'amber' ? '上昇傾向（末梢血管収縮）' : (theme === 'cyan' ? '低下傾向（末梢弛緩）' : '標準域（灌流安定）'),
             coherence: theme === 'amber' ? '低（不整変動）' : (theme === 'cyan' ? '中（徐波優位）' : '高（同調状態）'),
             snrAssessment: `${currentSnr} dB（信号品質指標: 良好）`
           },
-          vitalTrend: `心拍数${m.bpm}bpm、HRV${m.hrv}msを記録。生体データの実測推移を追従しています。`,
-          discrepancy: `実測心拍数${m.bpm}bpmに対しHRVが${m.hrv}msを記録。自律神経と心血管系シグナルに直接連動した生理学的状態が反映されています。`,
-          discrepancyNote: '体内の活動水準に応じた自律神経負荷を検出しました。',
-          focusLimitMins: theme === 'amber' ? 12 : (theme === 'cyan' ? 8 : 35),
+          vitalTrend: `心拍数${m.bpm}bpm、HRV${m.hrv}msを記録。身体活動と自律神経負荷に直接連動した生体推移を捉えています。`,
+          discrepancy: `実測心拍数${m.bpm}bpmに対しHRVが${m.hrv}msを記録。心血管系シグナルに顕著な交感神経ドライブが検出されています。`,
+          discrepancyNote: '高負荷な身体状態に即した自律神経シグナルを検出しました。',
+          focusLimitMins: theme === 'amber' ? 10 : (theme === 'cyan' ? 8 : 35),
           timeline: theme === 'amber' ? [
-            `開始8分後：心拍昂進に伴う呼吸促迫とタイピング入力の誤タッチ`,
-            `開始15分後：視野狭窄に伴う画面端の重要情報の見落とし`,
-            `開始25分後：ワーキングメモリ枯渇による再確認ループの多発`
+            `開始5分後：心拍昂進に伴う呼吸促迫とタイピング入力の誤タッチ`,
+            `開始12分後：視野狭窄に伴う画面端の重要情報の見落とし`,
+            `開始20分後：ワーキングメモリ枯渇による再確認ループの多発`
           ] : (theme === 'cyan' ? [
             `開始6分後：瞬き頻度の半減によるマイクロスリープの発生`,
             `開始14分後：同じテキスト行を何度も読み返す認知停滞`,
@@ -1467,12 +1481,12 @@
           ]),
           prescription: theme === 'amber' ? {
             title: '呼吸性不整脈を活用した迷走神経刺激呼吸',
-            reason: `心拍数${m.bpm}bpmと交感神経が優位であるため、呼気延長による副交感神経刺激が有効です。`,
+            reason: `心拍数${m.bpm}bpmと交感神経が極度に優位であるため、呼気延長による副交感神経刺激が必須です。`,
             actionSteps: [
               '背もたれに深く体重を預け、息を4秒吸って8秒かけて完全に吐き切る',
-              '冷たい水で口をゆすぐ、または手のひらを冷却する'
+              '冷たい水で口をゆすぐ、または手のひらを物理的に冷却する'
             ],
-            avoidAction: 'カフェインの摂取、タスクの同時進行'
+            avoidAction: 'カフェインの追加摂取、作業の強行'
           } : (theme === 'cyan' ? {
             title: '立ち上がり大腿四頭筋ストレッチと遠方視覚順応',
             reason: `BPM${m.bpm}と覚醒水準が低下しているため、大筋群の収縮と視覚刺激による中枢覚醒が必要です。`,
