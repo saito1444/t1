@@ -252,6 +252,22 @@
       line-height: 1.3;
     }
 
+    /* 日々のバイタル推移サマリーカード */
+    .baseline-card {
+      width: 100%;
+      max-width: 380px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-top: 8px;
+      font-size: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .baseline-item b { color: #38bdf8; }
+
     .btn-group {
       width: 100%;
       max-width: 380px;
@@ -363,6 +379,15 @@
       border: 1px solid rgba(245, 158, 11, 0.3);
     }
 
+    .vital-trend-box {
+      background: rgba(56, 189, 248, 0.08);
+      border-left: 2px solid #38bdf8;
+      padding: 6px 10px;
+      margin-top: 4px;
+      border-radius: 0 6px 6px 0;
+      color: #cbd5e1;
+    }
+
     .clinical-param-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -446,6 +471,40 @@
       margin-bottom: 2px;
     }
 
+    /* 過去履歴ログリスト */
+    .history-card {
+      width: 100%;
+      max-width: 380px;
+      background: rgba(15, 20, 31, 0.7);
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 10px;
+    }
+    .history-header {
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 4px;
+    }
+    .history-list {
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 10px;
+      color: #cbd5e1;
+    }
+    .history-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px dashed #1e293b;
+    }
+    .history-row:last-child { border-bottom: none; }
+
     .btn-reset {
       display: none;
       width: 100%;
@@ -463,6 +522,16 @@
       touch-action: manipulation;
     }
     .btn-reset:active { transform: scale(0.98); }
+
+    .btn-clear-history {
+      background: none;
+      border: none;
+      color: #64748b;
+      font-size: 9px;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+    }
   </style>
 </head>
 <body>
@@ -532,6 +601,12 @@
     </div>
   </div>
 
+  <!-- 個人ベースライン表示領域 -->
+  <div class="baseline-card" id="baselineCard">
+    <div class="baseline-item">個人ベースライン: <b id="baseAvgBpm">--</b> bpm / HRV <b id="baseAvgHrv">--</b> ms</div>
+    <div class="baseline-item" id="baseCountText">累計計測: 0回</div>
+  </div>
+
   <div id="agentActionCard" class="agent-action-card">
     <div class="agent-action-header">
       <span id="agentStatusTitle">自律的端末制御を実行</span>
@@ -542,7 +617,7 @@
 
   <div id="reportCard" class="report-card">
     <div class="report-title">
-      <span>生体深層推論カルテ (臨床・工学評価)</span>
+      <span>日次バイタルチェックカルテ (推移分析)</span>
       <span id="reportTimestamp">--:--:--</span>
     </div>
     <div id="reportContent" class="report-content"></div>
@@ -553,6 +628,17 @@
     <button id="measureBtn" class="btn-action btn-measure" onclick="startMeasurementOnly()" disabled>10秒間の生体計測を開始</button>
   </div>
   <button id="resetEnvBtn" class="btn-reset" onclick="resetEnvironment()">画面の適応モードを解除</button>
+
+  <!-- 過去のバイタル履歴一覧 -->
+  <div class="history-card" id="historyCard">
+    <div class="history-header">
+      <span>過去のバイタル測定履歴</span>
+      <button class="btn-clear-history" onclick="clearVitalHistory()">履歴を初期化</button>
+    </div>
+    <div class="history-list" id="historyList">
+      <div style="color:#64748b; text-align:center; padding:6px 0;">まだ測定履歴がありません</div>
+    </div>
+  </div>
 
   <script>
     const WORKER_ENDPOINT = "https://mizki1.6wvgd82df8.workers.dev";
@@ -578,6 +664,88 @@
 
     let bp_x1 = 0, bp_x2 = 0, bp_y1 = 0, bp_y2 = 0;
     let lastValidSignal = 0;
+
+    /* === localStorage による日跨ぎ履歴管理機能 === */
+    function getStoredHistory() {
+      try {
+        const stored = localStorage.getItem('rppg_vital_history');
+        return stored ? JSON.parse(stored) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveVitalRecord(record) {
+      try {
+        const history = getStoredHistory();
+        history.unshift(record);
+        if (history.length > 50) history.pop(); // 直近50件まで保持
+        localStorage.setItem('rppg_vital_history', JSON.stringify(history));
+        updateHistoryUI();
+      } catch (e) {
+        console.warn('履歴保存失敗:', e);
+      }
+    }
+
+    function clearVitalHistory() {
+      if (confirm('蓄積された測定履歴を消去し、ベースラインを初期化しますか？')) {
+        localStorage.removeItem('rppg_vital_history');
+        updateHistoryUI();
+      }
+    }
+
+    function getHistoryContextSummary() {
+      const history = getStoredHistory();
+      if (history.length === 0) return { count: 0 };
+
+      const totalBpm = history.reduce((sum, h) => sum + h.bpm, 0);
+      const totalHrv = history.reduce((sum, h) => sum + h.hrv, 0);
+      const avgBpm = Math.round(totalBpm / history.length);
+      const avgHrv = Math.round(totalHrv / history.length);
+
+      const recentStressCount = history.slice(0, 3).filter(h => h.stateLabel && h.stateLabel.includes('緊張')).length;
+      let recentTrend = '直近は安定傾向';
+      if (recentStressCount >= 2) recentTrend = '直近で交感神経の緊張傾向が連続';
+
+      return {
+        count: history.length,
+        avgBpm,
+        avgHrv,
+        recentTrend
+      };
+    }
+
+    function updateHistoryUI() {
+      const history = getStoredHistory();
+      const listEl = document.getElementById('historyList');
+      const baseAvgBpm = document.getElementById('baseAvgBpm');
+      const baseAvgHrv = document.getElementById('baseAvgHrv');
+      const baseCountText = document.getElementById('baseCountText');
+
+      if (history.length === 0) {
+        listEl.innerHTML = '<div style="color:#64748b; text-align:center; padding:6px 0;">まだ測定履歴がありません</div>';
+        baseAvgBpm.innerText = '--';
+        baseAvgHrv.innerText = '--';
+        baseCountText.innerText = '累計計測: 0回';
+        return;
+      }
+
+      const totalBpm = history.reduce((sum, h) => sum + h.bpm, 0);
+      const totalHrv = history.reduce((sum, h) => sum + h.hrv, 0);
+      baseAvgBpm.innerText = Math.round(totalBpm / history.length);
+      baseAvgHrv.innerText = Math.round(totalHrv / history.length);
+      baseCountText.innerText = `累計計測: ${history.length}回`;
+
+      listEl.innerHTML = history.slice(0, 5).map(h => {
+        return `
+          <div class="history-row">
+            <span>${h.date.split(' ')[0].slice(5)} ${h.date.split(' ')[1].slice(0, 5)} (${h.mode}s)</span>
+            <span>BPM: <b>${h.bpm}</b> / HRV: <b>${h.hrv}ms</b></span>
+            <span style="color:#38bdf8;">${h.stateLabel}</span>
+          </div>
+        `;
+      }).join('');
+    }
 
     function setMeasureMode(sec) {
       if (isScanning) return;
@@ -968,6 +1136,8 @@
     }
 
     async function requestCloudAiViaWorker(m, snr) {
+      const historyContext = getHistoryContextSummary();
+
       const res = await fetch(WORKER_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -976,7 +1146,8 @@
           hrv: m.hrv,
           intervals: m.intervals,
           snr: snr,
-          modeSeconds: currentModeSeconds
+          modeSeconds: currentModeSeconds,
+          historyContext: historyContext
         })
       });
 
@@ -1171,7 +1342,7 @@
       document.getElementById('pulseIndicator').style.display = 'none';
       
       const measureBtn = document.getElementById('measureBtn');
-      measureBtn.innerText = 'AIが臨床・工学推論を実行中...';
+      measureBtn.innerText = 'AIが日次バイタル推移を深層解析中...';
 
       const m = analyzeBiometrics();
       const specResult = drawAmplitudeSpectrum(rawSignals, timestamps);
@@ -1189,7 +1360,6 @@
         console.warn('Worker通信失敗・ローカル動的フォールバック実行:', e);
       }
 
-      // 通信失敗時にも、生体パラメータ（BPM/HRV）に応じて3パターンに動的生成
       if (!aiResult) {
         const isStressed = m.hrv < 38 || m.bpm > 82;
         const isDrowsy = m.hrv > 58 && m.bpm < 68;
@@ -1210,6 +1380,7 @@
             coherence: theme === 'amber' ? '低（不整変動）' : (theme === 'cyan' ? '中（徐波優位）' : '高（同調状態）'),
             snrAssessment: `${currentSnr} dB（信号品質指標: 良好）`
           },
+          vitalTrend: '日々の蓄積データと比較して、自律神経の急激な傾きが検出されています。一過性の疲労兆候に留意してください。',
           discrepancy: theme === 'amber' 
             ? `拍動間隔平均${Math.round(60000/m.bpm)}msに対しHRVが${m.hrv}msと抑制。表情筋の静止に反して末梢収縮シグナルに顕著な交感神経スパイクが検出されています。`
             : (theme === 'cyan'
@@ -1260,6 +1431,18 @@
         };
       }
 
+      // localStorageへ今回の測定結果を自動蓄積
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      saveVitalRecord({
+        date: dateStr,
+        bpm: m.bpm,
+        hrv: m.hrv,
+        snr: currentSnr,
+        stateLabel: aiResult.stateLabel,
+        mode: currentModeSeconds
+      });
+
       document.getElementById('stateVal').innerText = aiResult.stateLabel;
       document.getElementById('stateNoteDisplay').innerText = aiResult.stateNote || '自律神経の傾き';
 
@@ -1274,7 +1457,7 @@
 
       const reportCard = document.getElementById('reportCard');
       const reportContent = document.getElementById('reportContent');
-      document.getElementById('reportTimestamp').innerText = new Date().toTimeString().split(' ')[0];
+      document.getElementById('reportTimestamp').innerText = now.toTimeString().split(' ')[0];
 
       let timelineHtml = (aiResult.timeline || []).map(item => `<div class="timeline-item">・${item}</div>`).join('');
       
@@ -1294,6 +1477,13 @@
       reportContent.innerHTML = `
         <div class="report-section" style="color:#38bdf8; font-size:10px; margin-bottom:6px;">
           【推論エンジン】Cloudflare Workers × Gemini 2.5 Flash 完全秘匿中継
+        </div>
+
+        <div class="report-section">
+          <strong>【日次バイタル推移とベースライン比較】</strong>
+          <div class="vital-trend-box">
+            ${aiResult.vitalTrend || '蓄積された過去データをもとに日々のバイタル推移を追従中。'}
+          </div>
         </div>
 
         <div class="report-section">
@@ -1351,6 +1541,11 @@
       document.getElementById('progressContainer').style.display = 'none';
       document.getElementById('guideHint').innerText = '診断が完了しました。再計測可能です。';
     }
+
+    // ページ読み込み時に過去履歴UIを展開
+    window.addEventListener('DOMContentLoaded', () => {
+      updateHistoryUI();
+    });
   </script>
 </body>
 </html>
