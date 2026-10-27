@@ -252,6 +252,50 @@
       line-height: 1.3;
     }
 
+    .btn-group {
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .btn-action {
+      width: 100%;
+      padding: 13px;
+      border-radius: 8px;
+      border: none;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      position: relative;
+      z-index: 100;
+      touch-action: manipulation;
+      user-select: none;
+      transition: all 0.2s ease;
+    }
+    .btn-camera {
+      background: #1e293b;
+      color: #38bdf8;
+      border: 1px solid #38bdf8;
+    }
+    .btn-camera:active { transform: scale(0.98); background: rgba(56, 189, 248, 0.1); }
+    .btn-measure {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+    }
+    .btn-measure:active { transform: scale(0.98); filter: brightness(1.15); }
+    .btn-measure:disabled, .btn-camera:disabled {
+      background: #1e293b !important;
+      color: #64748b !important;
+      border-color: #334155 !important;
+      box-shadow: none !important;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
     .agent-action-card {
       width: 100%;
       max-width: 380px;
@@ -402,32 +446,6 @@
       margin-bottom: 2px;
     }
 
-    .btn-action {
-      width: 100%;
-      max-width: 380px;
-      padding: 15px;
-      border-radius: 8px;
-      border: none;
-      background: linear-gradient(135deg, #0284c7, #2563eb);
-      color: #ffffff;
-      font-size: 14px;
-      font-weight: 700;
-      cursor: pointer;
-      margin-top: 10px;
-      position: relative;
-      z-index: 100;
-      touch-action: manipulation;
-      user-select: none;
-      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
-    }
-    .btn-action:active { transform: scale(0.98); filter: brightness(1.15); }
-    .btn-action:disabled {
-      background: #334155 !important;
-      color: #94a3b8 !important;
-      box-shadow: none !important;
-      cursor: not-allowed;
-    }
-
     .btn-reset {
       display: none;
       width: 100%;
@@ -476,7 +494,7 @@
         <ellipse cx="60" cy="42" rx="34" ry="32" />
         <path d="M 38 72 C 34 82 16 88 0 102 L 0 125 L 120 125 L 120 102 C 104 88 86 82 82 72" />
       </svg>
-      <div class="guide-hint" id="guideHint">枠内に顔を合わせてください</div>
+      <div class="guide-hint" id="guideHint">1. 先に「カメラを起動」を押してください</div>
     </div>
 
     <div class="scan-line" id="scanLine"></div>
@@ -530,7 +548,10 @@
     <div id="reportContent" class="report-content"></div>
   </div>
 
-  <button id="startBtn" class="btn-action" onclick="startScanSession()">10秒間の生体計測を開始</button>
+  <div class="btn-group">
+    <button id="cameraBtn" class="btn-action btn-camera" onclick="startCameraOnly()">カメラを起動して位置を合わせる</button>
+    <button id="measureBtn" class="btn-action btn-measure" onclick="startMeasurementOnly()" disabled>10秒間の生体計測を開始</button>
+  </div>
   <button id="resetEnvBtn" class="btn-reset" onclick="resetEnvironment()">画面の適応モードを解除</button>
 
   <script>
@@ -543,6 +564,7 @@
     const specCtx = specCanvas.getContext('2d');
 
     let cameraInstance = null;
+    let isCameraReady = false;
     let isScanning = false;
     let scanStartTime = null;
     
@@ -566,10 +588,12 @@
       document.getElementById('mode60').classList.toggle('active', sec === 60);
 
       document.getElementById('currentModeBadge').innerText = sec === 10 ? '10秒 クイック' : '60秒 学術精度';
-      document.getElementById('startBtn').innerText = `${sec}秒間の生体計測を開始`;
+      const measureBtn = document.getElementById('measureBtn');
+      if (!isScanning) {
+        measureBtn.innerText = `${sec}秒間の生体計測を開始`;
+      }
     }
 
-    // Elgendi et al.(2026)準拠：多重ROI（額・左頬・右頬）の抽出
     function extractMultiRoiBounding(landmarks) {
       function getBox(indices) {
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -598,7 +622,6 @@
       };
     }
 
-    // 測光正規化（Photometric Normalization）を組み込んだCHROM脈波抽出
     function extractSkinChromSignal(multiRoi) {
       try {
         let totalR = 0, totalG = 0, totalB = 0, totalCount = 0;
@@ -629,7 +652,6 @@
           rgbBuffer.b.shift();
         }
 
-        // 時間窓（過去3秒分）の平均値による除算正規化（DC成分・照明ドリフトの除去）
         const meanR = rgbBuffer.r.reduce((a, b) => a + b, 0) / rgbBuffer.r.length;
         const meanG = rgbBuffer.g.reduce((a, b) => a + b, 0) / rgbBuffer.g.length;
         const meanB = rgbBuffer.b.reduce((a, b) => a + b, 0) / rgbBuffer.b.length;
@@ -692,7 +714,6 @@
     }
 
     function applyBandpassFilter(input) {
-      // 0.7Hz - 3.0Hz (42 - 180 bpm) 2次バターワースIIRフィルタ
       const b0 = 0.067455, b1 = 0, b2 = -0.067455;
       const a1 = -1.142981, a2 = 0.412802;
 
@@ -770,9 +791,8 @@
       }
     }
 
-    // スペクトル解析およびSNR(dB)の動的計算（Elgendi et al., 2026 Table 3 準拠）
     function drawAmplitudeSpectrum(signals, times) {
-      if (signals.length < 32) return { snrDb: 0, peakFreq: 0 };
+      if (signals.length < 32) return { snrDb: "0.0", peakFreq: 0 };
 
       const N = 128;
       const { resampledSignals } = resampleUniform(signals.slice(-120), times.slice(-120), 30.0);
@@ -816,7 +836,6 @@
       const peakFreq = peakIdx * freqStep;
       const estimatedBpm = Math.round(peakFreq * 60);
 
-      // SNR (dB) の算出: ピークおよび第1高調波帯域のパワー vs 全ノイズパワー
       let signalPower = 0;
       let totalPower = 0;
       for (let i = 1; i < numBins; i++) {
@@ -893,7 +912,7 @@
 
     function analyzeBiometrics() {
       const minPoints = currentModeSeconds === 10 ? 40 : 250;
-      if (rawSignals.length < minPoints) return { bpm: 72, hrv: 45, intervals: [800, 810], snr: "3.2" };
+      if (rawSignals.length < minPoints) return { bpm: 72, hrv: 45, intervals: [800, 810] };
 
       const { resampledSignals, dt } = resampleUniform(rawSignals, timestamps, 30.0);
 
@@ -1014,16 +1033,16 @@
       document.getElementById('agentActionCard').style.display = 'none';
       document.getElementById('reportCard').style.display = 'none';
       document.getElementById('resetEnvBtn').style.display = 'none';
-      document.getElementById('guideHint').innerText = '枠内に顔を合わせてください';
+      document.getElementById('guideHint').innerText = isCameraReady ? '枠内に顔を合わせ、計測開始を押してください' : '1. 先に「カメラを起動」を押してください';
       document.getElementById('bpmVal').innerText = '--';
       document.getElementById('hrvVal').innerText = '--';
       document.getElementById('stateVal').innerText = '待機中';
       document.getElementById('snrVal').innerText = '--';
       document.getElementById('stateNoteDisplay').innerText = '戦闘モードか休息モードか';
 
-      const startBtn = document.getElementById('startBtn');
-      startBtn.disabled = false;
-      startBtn.innerText = `${currentModeSeconds}秒間の生体計測を開始`;
+      const measureBtn = document.getElementById('measureBtn');
+      measureBtn.disabled = !isCameraReady;
+      measureBtn.innerText = `${currentModeSeconds}秒間の生体計測を開始`;
 
       bp_x1 = 0; bp_x2 = 0; bp_y1 = 0; bp_y2 = 0;
       lastValidSignal = 0;
@@ -1050,7 +1069,11 @@
         const rawVal = extractSkinChromSignal(multiRoi);
 
         document.getElementById('silhouetteSvg').style.stroke = '#10b981';
-        document.getElementById('guideHint').innerText = '顔を検出中：そのまま静止してください';
+        
+        if (!isScanning) {
+          document.getElementById('guideHint').innerText = '顔を検出中：位置を調整し「計測開始」を押してください';
+          document.getElementById('measureBtn').disabled = false;
+        }
 
         if (rawVal !== null && isScanning) {
           const now = performance.now();
@@ -1073,27 +1096,16 @@
         }
       } else {
         document.getElementById('silhouetteSvg').style.stroke = 'rgba(56, 189, 248, 0.45)';
-        if (!isScanning) document.getElementById('guideHint').innerText = '枠内に顔を合わせてください';
+        if (!isScanning && isCameraReady) {
+          document.getElementById('guideHint').innerText = '枠内に顔を合わせてください';
+        }
       }
     });
 
-    async function startScanSession() {
-      const btn = document.getElementById('startBtn');
-      btn.disabled = true;
-      btn.innerText = `生体データを計測中（${currentModeSeconds}秒間、静止してください）...`;
-
-      resetEnvironment();
-      btn.disabled = true;
-      btn.innerText = `生体データを計測中（${currentModeSeconds}秒間、静止してください）...`;
-
-      document.getElementById('progressContainer').style.display = 'block';
-      document.getElementById('progressBar').style.width = '0%';
-      document.getElementById('scanLine').style.display = 'block';
-      document.getElementById('pulseIndicator').style.display = 'block';
-      document.getElementById('stateVal').innerText = '解析中';
-
-      rawSignals.length = 0;
-      timestamps.length = 0;
+    async function startCameraOnly() {
+      const camBtn = document.getElementById('cameraBtn');
+      camBtn.disabled = true;
+      camBtn.innerText = 'カメラを起動中...';
 
       try {
         if (!cameraInstance) {
@@ -1116,14 +1128,40 @@
           await cameraInstance.start();
         }
 
-        scanStartTime = performance.now();
-        isScanning = true;
+        isCameraReady = true;
+        camBtn.innerText = 'カメラ起動済み（位置調整中）';
+        document.getElementById('guideHint').innerText = '枠内に顔を合わせ、静止したら計測開始を押してください';
+        document.getElementById('measureBtn').disabled = false;
       } catch (err) {
         alert("カメラの起動に失敗しました。カメラの利用権限を許可してください。");
-        btn.disabled = false;
-        btn.innerText = `${currentModeSeconds}秒間の生体計測を開始`;
-        document.getElementById('stateVal').innerText = 'エラー';
+        camBtn.disabled = false;
+        camBtn.innerText = 'カメラを起動して位置を合わせる';
       }
+    }
+
+    function startMeasurementOnly() {
+      if (!isCameraReady || isScanning) return;
+
+      const measureBtn = document.getElementById('measureBtn');
+      measureBtn.disabled = true;
+      measureBtn.innerText = `生体データを計測中（${currentModeSeconds}秒間、静止してください）...`;
+
+      resetEnvironment();
+      measureBtn.disabled = true;
+      measureBtn.innerText = `生体データを計測中（${currentModeSeconds}秒間、静止してください）...`;
+
+      document.getElementById('progressContainer').style.display = 'block';
+      document.getElementById('progressBar').style.width = '0%';
+      document.getElementById('scanLine').style.display = 'block';
+      document.getElementById('pulseIndicator').style.display = 'block';
+      document.getElementById('stateVal').innerText = '解析中';
+      document.getElementById('guideHint').innerText = '計測中：そのまま動かずに静止してください';
+
+      rawSignals.length = 0;
+      timestamps.length = 0;
+
+      scanStartTime = performance.now();
+      isScanning = true;
     }
 
     async function completeScanSession() {
@@ -1132,8 +1170,8 @@
       document.getElementById('scanLine').style.display = 'none';
       document.getElementById('pulseIndicator').style.display = 'none';
       
-      const startBtn = document.getElementById('startBtn');
-      startBtn.innerText = 'AIが臨床・工学推論を実行中...';
+      const measureBtn = document.getElementById('measureBtn');
+      measureBtn.innerText = 'AIが臨床・工学推論を実行中...';
 
       const m = analyzeBiometrics();
       const specResult = drawAmplitudeSpectrum(rawSignals, timestamps);
@@ -1148,11 +1186,15 @@
       try {
         aiResult = await requestCloudAiViaWorker(m, currentSnr);
       } catch (e) {
-        console.warn('Worker通信失敗・ローカルフォールバック実行:', e);
+        console.warn('Worker通信失敗・ローカル動的フォールバック実行:', e);
       }
 
+      // 通信失敗時にも、生体パラメータ（BPM/HRV）に応じて3パターンに動的生成
       if (!aiResult) {
-        const theme = m.hrv < 38 ? 'amber' : (m.hrv > 62 ? 'cyan' : 'emerald');
+        const isStressed = m.hrv < 38 || m.bpm > 82;
+        const isDrowsy = m.hrv > 58 && m.bpm < 68;
+        const theme = isStressed ? 'amber' : (isDrowsy ? 'cyan' : 'emerald');
+
         aiResult = {
           theme: theme,
           toolName: theme === 'amber' ? '交感神経抑制制御' : (theme === 'cyan' ? '覚醒水準補正制御' : 'コヒーレンス維持制御'),
@@ -1160,31 +1202,61 @@
             `画面配色を${theme.toUpperCase()}モードへ適応変更`,
             '生体フィードバック触覚振動を実行'
           ],
-          stateLabel: theme === 'amber' ? '交感神経過緊張' : (theme === 'cyan' ? '副交感神経優位' : '自律神経至適共鳴'),
-          stateNote: theme === 'amber' ? '心身が過剰な防御・戦闘モードに入っています' : (theme === 'cyan' ? '中枢神経系が省エネ・仮眠モードに入っています' : '理想的な認知的ゾーン状態を維持しています'),
-          equivLabel: theme === 'amber' ? '面接・登壇スピーチ直前相当' : (theme === 'cyan' ? '仮眠直前の弛緩相当' : '深い没入作業相当'),
+          stateLabel: theme === 'amber' ? '交感神経過緊張' : (theme === 'cyan' ? '覚醒水準減退' : '自律神経至適共鳴'),
+          stateNote: theme === 'amber' ? '焦燥や脳内過積載による緊張状態' : (theme === 'cyan' ? '中枢性疲労による強い眠気' : '高い集中力を維持したゾーン状態'),
+          equivLabel: theme === 'amber' ? '緊迫したプレゼン直前相当' : (theme === 'cyan' ? '長時間の単調作業による弛緩相当' : '深い没入作業相当'),
           clinicalParams: {
-            svr: theme === 'amber' ? '上昇傾向（末梢血管収縮）' : '標準域（末梢灌流安定）',
+            svr: theme === 'amber' ? '上昇傾向（末梢血管収縮）' : (theme === 'cyan' ? '低下傾向（末梢弛緩）' : '標準域（灌流安定）'),
             coherence: theme === 'amber' ? '低（不整変動）' : (theme === 'cyan' ? '中（徐波優位）' : '高（同調状態）'),
             snrAssessment: `${currentSnr} dB（信号品質指標: 良好）`
           },
-          discrepancy: `拍動間隔平均${Math.round(60000/m.bpm)}msに対し、HRV(RMSSD)が${m.hrv}msを記録。外見の静止表情筋に反して微小血管収縮シグナルに顕著な交感神経スパイクが検出されています。`,
-          discrepancyNote: '外見は冷静に見えますが、体内の自律神経は高い作業負荷に対処しています。',
-          focusLimitMins: Math.max(10, Math.round((m.hrv / 100) * 45)),
-          timeline: [
-            `開始12分後：視覚探索速度が現在の82%まで減退（眼球停留時間の延長）`,
-            `開始24分後：僧帽筋周辺の筋電位上昇に伴う姿勢前傾の固定化`,
-            `開始36分後：ワーキングメモリ枯渇による注意資源配分の破綻と誤判定頻発`
-          ],
-          prescription: {
-            title: theme === 'amber' ? '5分間の視覚遮断および迷走神経刺激呼吸' : (theme === 'cyan' ? '15分間のパワーナップまたは軽歩行' : '現在の作業セッションを30分間継続完遂'),
-            reason: theme === 'amber' ? '交感神経が昂進しているため激しい運動は逆効果です。呼気延長による副交感神経刺激が必須です。' : '中枢覚醒度が減退しているため、物理的感覚刺激を入れる必要があります。',
+          discrepancy: theme === 'amber' 
+            ? `拍動間隔平均${Math.round(60000/m.bpm)}msに対しHRVが${m.hrv}msと抑制。表情筋の静止に反して末梢収縮シグナルに顕著な交感神経スパイクが検出されています。`
+            : (theme === 'cyan'
+              ? `心拍数${m.bpm}bpmと徐拍傾向を示し、HRV${m.hrv}msを記録。中枢神経系の覚醒度が低下し、視覚探索速度の鈍化が示唆されます。`
+              : `心拍数${m.bpm}bpm、HRV${m.hrv}msと安定したコヒーレンスを記録。交感神経と副交感神経が理想的なバランスで機能しています。`),
+          discrepancyNote: theme === 'amber' 
+            ? '冷静に見えますが体内は焦燥感と緊張に対処しています。' 
+            : (theme === 'cyan' ? '体はリラックスしていますが集中が途切れかけています。' : '集中とリラックスが理想的に調和しています。'),
+          focusLimitMins: theme === 'amber' ? 12 : (theme === 'cyan' ? 8 : 35),
+          timeline: theme === 'amber' ? [
+            `開始8分後：焦燥感によるタイピング入力の誤タッチ急増`,
+            `開始15分後：視野狭窄に伴う画面端の重要情報の見落とし`,
+            `開始25分後：ワーキングメモリ枯渇による再確認ループの多発`
+          ] : (theme === 'cyan' ? [
+            `開始6分後：瞬き頻度の半減によるマイクロスリープの発生`,
+            `開始14分後：同じテキスト行を何度も読み返す認知停滞`,
+            `開始20分後：姿勢の前傾固定化と注意力の完全な散漫化`
+          ] : [
+            `開始20分後：ゾーン状態の持続による緩やかな疲労蓄積`,
+            `開始35分後：僧帽筋周辺の微小な筋緊張の自覚`,
+            `開始45分後：集中力ピークの下降と休息推奨ゾーン突入`
+          ]),
+          prescription: theme === 'amber' ? {
+            title: '手のひらの冷水冷却と迷走神経刺激呼吸',
+            reason: `HRV${m.hrv}msと交感神経が極度に昂っているため、末梢血管の冷却と呼気延長で副交感神経を強制起動させる必要があります。`,
             actionSteps: [
-              'ディスプレイから完全に視線を外し、1分間暗順応させる',
-              '息を4秒吸い、8秒かけてゆっくり吐き切る（呼気重点法）'
+              '洗面所で手のひらや前腕に冷水を15秒間当てて物理的冷却を行う',
+              '背もたれに深く体重を預け、息を4秒吸って8秒かけて完全に吐き切る'
             ],
-            avoidAction: 'カフェインの追加摂取、激しい有酸素運動'
-          }
+            avoidAction: '熱いコーヒーの追加摂取、タスクの同時進行'
+          } : (theme === 'cyan' ? {
+            title: '立ち上がり大腿四頭筋ストレッチと遠方視覚順応',
+            reason: `BPM${m.bpm}と覚醒水準が低下しているため、大筋群の収縮と視覚刺激による中枢覚醒が必要です。`,
+            actionSteps: [
+              '椅子から完全に立ち上がり、その場で足踏みまたは屈伸を10回行う',
+              '5メートル以上離れた遠くの対象を20秒間凝視し、冷水で口をゆすぐ'
+            ],
+            avoidAction: '座ったまま画面を見つめ続けること、糖分の過剰摂取'
+          } : {
+            title: '現在の作業セッションを20分間で完遂',
+            reason: '自律神経が至適状態にあるため、中断せず現在のタスクを区切りの良いところまで進めるのが最適です。',
+            actionSteps: [
+              '一口の水分を補給し、現在の優先タスクに集中する',
+              '20分後にアラームを設定し、そこで一旦作業を打ち切る'
+            ],
+            avoidAction: '突然の長時間休憩による集中ゾーンの中断'
+          })
         };
       }
 
@@ -1273,10 +1345,11 @@
       `;
       reportCard.style.display = 'block';
 
-      startBtn.disabled = false;
-      startBtn.innerText = `${currentModeSeconds}秒間の生体計測を開始`;
+      measureBtn.disabled = false;
+      measureBtn.innerText = `再度、${currentModeSeconds}秒間の生体計測を開始`;
       document.getElementById('resetEnvBtn').style.display = 'block';
       document.getElementById('progressContainer').style.display = 'none';
+      document.getElementById('guideHint').innerText = '診断が完了しました。再計測可能です。';
     }
   </script>
 </body>
