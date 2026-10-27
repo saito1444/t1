@@ -597,7 +597,7 @@
     <div class="progress-bar" id="progressBar"></div>
   </div>
 
-  <!-- 512点ゼロパディング高密度FFT振幅スペクトル -->
+  <!-- 512点高密度ゼロパディング振幅スペクトル -->
   <div class="spectrum-panel">
     <div class="spectrum-title">rPPG AMPLITUDE SPECTRUM (0 - 3.0 Hz)</div>
     <canvas id="spectrumCanvas"></canvas>
@@ -683,6 +683,7 @@
     let cameraInstance = null;
     let isCameraReady = false;
     let isScanning = false;
+    let isWarmingUp = false;
     let scanStartTime = null;
     
     let currentModeSeconds = 10;
@@ -820,7 +821,6 @@
       };
     }
 
-    /* === CHROM法による高感度皮膚色差信号抽出（不自然なリミッター排除） === */
     function extractSkinChromSignal(multiRoi) {
       try {
         let totalR = 0, totalG = 0, totalB = 0, totalCount = 0;
@@ -868,7 +868,7 @@
     }
 
     function drawHighContrastPulseOverlay(multiRoi, signalVal) {
-      if (!isScanning) return;
+      if (!isScanning || isWarmingUp) return;
       const clamped = Math.max(-1.5, Math.min(1.5, signalVal));
       const intensity = Math.min(1.0, Math.abs(clamped) / 1.0);
 
@@ -984,11 +984,10 @@
       }
     }
 
-    /* === 512点ゼロパディング高密度FFT振幅スペクトル（滑らかな曲線で山を形成） === */
     function drawAmplitudeSpectrum(signals, times) {
       if (signals.length < 24) return { snrDb: "0.0", peakFreq: 0 };
 
-      const N = 512; // 解像度を大幅に引き上げ
+      const N = 512;
       const { resampledSignals } = resampleUniform(signals.slice(-150), times.slice(-150), 30.0);
       
       const real = new Float32Array(N);
@@ -1010,7 +1009,7 @@
 
       const maxFreq = 3.0;
       const fs = 30.0;
-      const freqStep = fs / N; // 約0.058Hzごとの高密度サンプリング
+      const freqStep = fs / N;
       const numBins = Math.floor(maxFreq / freqStep);
 
       const amps = [];
@@ -1046,7 +1045,6 @@
       const plotW = specCanvas.width - padL - padR;
       const plotH = specCanvas.height - padT - padB;
 
-      // 目盛りとグリッド線
       specCtx.strokeStyle = '#1e293b';
       specCtx.lineWidth = 1;
       specCtx.font = '8px monospace';
@@ -1062,7 +1060,6 @@
         specCtx.fillText(f.toFixed(1), x, specCanvas.height - 4);
       }
 
-      // オートスケールで滑らかな山を描画
       const displayMax = Math.max(0.005, maxAmp * 1.25);
       specCtx.strokeStyle = currentWaveColor;
       specCtx.lineWidth = 1.8;
@@ -1077,7 +1074,6 @@
       }
       specCtx.stroke();
 
-      // 呼吸帯域（0.4Hz）マーカー
       const respX = padL + (0.4 / 3.0) * plotW;
       specCtx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
       specCtx.setLineDash([4, 2, 1, 2]);
@@ -1088,7 +1084,6 @@
       specCtx.fillStyle = '#94a3b8';
       specCtx.fillText('Resp 0.4Hz', respX, padT - 6);
 
-      // 心拍数マーカー（ピークに滑らかに追従）
       if (peakFreq >= 0.75) {
         const hrX = padL + (peakFreq / 3.0) * plotW;
         specCtx.strokeStyle = '#f43f5e';
@@ -1275,8 +1270,25 @@
 
         if (rawVal !== null && isScanning) {
           const now = performance.now();
+
+          // フィルタ初期メモリの同期（インパルス衝撃の回避）
+          if (bp_x1 === 0 && bp_y1 === 0) {
+            bp_x1 = rawVal; bp_x2 = rawVal;
+            bp_y1 = rawVal; bp_y2 = rawVal;
+          }
+
           const filtered = applyBandpassFilter(rawVal);
-          
+          const elapsed = now - scanStartTime;
+
+          // 開始0.8秒間はウォームアップとして裏でフィルタを安定化
+          if (elapsed < 800) {
+            return;
+          } else if (isWarmingUp) {
+            isWarmingUp = false;
+            document.getElementById('stateVal').innerText = '解析中';
+            document.getElementById('guideHint').innerText = '計測中：そのまま動かずに静止してください';
+          }
+
           rawSignals.push(filtered);
           timestamps.push(now);
 
@@ -1286,11 +1298,12 @@
             document.getElementById('snrVal').innerText = `${specResult.snrDb} dB`;
           }
 
-          const elapsed = now - scanStartTime;
-          const pct = Math.min(100, Math.round((elapsed / scanDurationMs) * 100));
+          // 助走完了後から正規のプログレスバー進行
+          const activeElapsed = elapsed - 800;
+          const pct = Math.min(100, Math.round((activeElapsed / scanDurationMs) * 100));
           document.getElementById('progressBar').style.width = pct + '%';
 
-          if (elapsed >= scanDurationMs) completeScanSession();
+          if (activeElapsed >= scanDurationMs) completeScanSession();
         }
       } else {
         document.getElementById('silhouetteSvg').style.stroke = 'rgba(56, 189, 248, 0.45)';
@@ -1352,12 +1365,14 @@
       document.getElementById('progressBar').style.width = '0%';
       document.getElementById('scanLine').style.display = 'block';
       document.getElementById('pulseIndicator').style.display = 'block';
-      document.getElementById('stateVal').innerText = '解析中';
-      document.getElementById('guideHint').innerText = '計測中：そのまま動かずに静止してください';
+      document.getElementById('stateVal').innerText = '準備中';
+      document.getElementById('guideHint').innerText = '計測開始：信号を同期中...動かずに静止してください';
 
       rawSignals.length = 0;
       timestamps.length = 0;
 
+      // 最初の0.8秒間をウォームアップに設定
+      isWarmingUp = true;
       scanStartTime = performance.now();
       isScanning = true;
     }
