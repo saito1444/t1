@@ -597,7 +597,7 @@
     <div class="progress-bar" id="progressBar"></div>
   </div>
 
-  <!-- 512点高密度ゼロパディング振幅スペクトル -->
+  <!-- 512点ゼロパディング高密度FFT振幅スペクトル -->
   <div class="spectrum-panel">
     <div class="spectrum-title">rPPG AMPLITUDE SPECTRUM (0 - 3.0 Hz)</div>
     <canvas id="spectrumCanvas"></canvas>
@@ -695,6 +695,7 @@
     let currentWaveColor = '#38bdf8';
 
     let bp_x1 = 0, bp_x2 = 0, bp_y1 = 0, bp_y2 = 0;
+    let smoothedPeakFreq = 1.15; // 初期基準 69bpm
 
     function getStoredHistory() {
       try {
@@ -906,9 +907,10 @@
       outCtx.restore();
     }
 
+    // 0.7Hz - 2.0Hz (42 - 120 bpm) にローパスを強化した2次バターワースIIRフィルタ
     function applyBandpassFilter(input) {
-      const b0 = 0.067455, b1 = 0, b2 = -0.067455;
-      const a1 = -1.142981, a2 = 0.412802;
+      const b0 = 0.0543, b1 = 0, b2 = -0.0543;
+      const a1 = -1.3120, a2 = 0.4914;
 
       const output = b0 * input + b1 * bp_x1 + b2 * bp_x2 - a1 * bp_y1 - a2 * bp_y2;
       bp_x2 = bp_x1;
@@ -984,6 +986,7 @@
       }
     }
 
+    /* === 512点ゼロパディングFFT & 安静時優先ピーク判定（高周波ノイズ完全除外） === */
     function drawAmplitudeSpectrum(signals, times) {
       if (signals.length < 24) return { snrDb: "0.0", peakFreq: 0 };
 
@@ -1013,22 +1016,28 @@
       const numBins = Math.floor(maxFreq / freqStep);
 
       const amps = [];
-      let maxAmp = 0.0001;
+      let maxAmpInBand = 0.0001;
       let peakIdx = 0;
 
       for (let i = 0; i < numBins; i++) {
         const mag = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
         amps.push(mag);
         const freq = i * freqStep;
-        if (freq >= 0.75 && freq <= 2.2 && mag > maxAmp) {
-          maxAmp = mag;
+
+        // 【最重要修正】心拍ピーク探索を「0.85Hz〜1.80Hz（51〜108 bpm）」に限定
+        // 2.0Hz以上の高周波フリッカーや第2高調波ノイズを完全に除外
+        if (freq >= 0.85 && freq <= 1.80 && mag > maxAmpInBand) {
+          maxAmpInBand = mag;
           peakIdx = i;
         }
       }
 
-      const peakFreq = peakIdx * freqStep;
-      const estimatedBpm = Math.round(peakFreq * 60);
+      const rawPeakFreq = peakIdx * freqStep;
+      // 移動平均でピーク位置のジッターを抑制
+      smoothedPeakFreq = smoothedPeakFreq * 0.7 + rawPeakFreq * 0.3;
+      const estimatedBpm = Math.round(smoothedPeakFreq * 60);
 
+      // SNR算出
       let signalPower = 0;
       let totalPower = 0;
       for (let i = 1; i < numBins; i++) {
@@ -1045,6 +1054,7 @@
       const plotW = specCanvas.width - padL - padR;
       const plotH = specCanvas.height - padT - padB;
 
+      // 目盛り線
       specCtx.strokeStyle = '#1e293b';
       specCtx.lineWidth = 1;
       specCtx.font = '8px monospace';
@@ -1060,7 +1070,11 @@
         specCtx.fillText(f.toFixed(1), x, specCanvas.height - 4);
       }
 
-      const displayMax = Math.max(0.005, maxAmp * 1.25);
+      // スペクトルの最大値（描画スケール）
+      let globalMax = 0.005;
+      for (let i = 0; i < numBins; i++) if (amps[i] > globalMax) globalMax = amps[i];
+      const displayMax = globalMax * 1.2;
+
       specCtx.strokeStyle = currentWaveColor;
       specCtx.lineWidth = 1.8;
       specCtx.beginPath();
@@ -1074,6 +1088,7 @@
       }
       specCtx.stroke();
 
+      // 呼吸帯域（0.4Hz）マーカー
       const respX = padL + (0.4 / 3.0) * plotW;
       specCtx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
       specCtx.setLineDash([4, 2, 1, 2]);
@@ -1084,8 +1099,9 @@
       specCtx.fillStyle = '#94a3b8';
       specCtx.fillText('Resp 0.4Hz', respX, padT - 6);
 
-      if (peakFreq >= 0.75) {
-        const hrX = padL + (peakFreq / 3.0) * plotW;
+      // 心拍数マーカー（中央の真の山へ正確に追従）
+      if (smoothedPeakFreq >= 0.85) {
+        const hrX = padL + (smoothedPeakFreq / 3.0) * plotW;
         specCtx.strokeStyle = '#f43f5e';
         specCtx.setLineDash([3, 3]);
         specCtx.beginPath();
@@ -1097,7 +1113,7 @@
       }
 
       specCtx.setLineDash([]);
-      return { snrDb: snrVal, peakFreq };
+      return { snrDb: snrVal, peakFreq: smoothedPeakFreq, estimatedBpm };
     }
 
     function analyzeBiometrics() {
@@ -1127,22 +1143,20 @@
         }
       }
 
-      let bpm = 74;
+      let bpm = Math.round(smoothedPeakFreq * 60);
       let hrv = 40;
       const intervals = [];
 
       if (peakIndices.length >= 3) {
         for (let i = 1; i < peakIndices.length; i++) {
           const diffMs = (peakIndices[i] - peakIndices[i - 1]) * dt;
-          if (diffMs >= 375 && diffMs <= 1420) {
+          // 安静時生理域（50〜110 bpm相当）のIBIのみ採用
+          if (diffMs >= 545 && diffMs <= 1200) {
             intervals.push(Math.round(diffMs));
           }
         }
 
         if (intervals.length >= 2) {
-          const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-          bpm = Math.round(60000 / avgInterval);
-
           let diffSqSum = 0;
           for (let i = 1; i < intervals.length; i++) {
             diffSqSum += Math.pow(intervals[i] - intervals[i - 1], 2);
@@ -1151,8 +1165,8 @@
         }
       }
 
-      bpm = Math.min(125, Math.max(58, bpm));
-      hrv = Math.min(95, Math.max(18, hrv));
+      bpm = Math.min(108, Math.max(54, bpm));
+      hrv = Math.min(85, Math.max(22, hrv));
 
       return { bpm, hrv, intervals };
     }
@@ -1271,7 +1285,6 @@
         if (rawVal !== null && isScanning) {
           const now = performance.now();
 
-          // フィルタ初期メモリの同期（インパルス衝撃の回避）
           if (bp_x1 === 0 && bp_y1 === 0) {
             bp_x1 = rawVal; bp_x2 = rawVal;
             bp_y1 = rawVal; bp_y2 = rawVal;
@@ -1280,7 +1293,7 @@
           const filtered = applyBandpassFilter(rawVal);
           const elapsed = now - scanStartTime;
 
-          // 開始0.8秒間はウォームアップとして裏でフィルタを安定化
+          // 開始0.8秒間はウォームアップとして裏でフィルタ安定化
           if (elapsed < 800) {
             return;
           } else if (isWarmingUp) {
@@ -1298,7 +1311,6 @@
             document.getElementById('snrVal').innerText = `${specResult.snrDb} dB`;
           }
 
-          // 助走完了後から正規のプログレスバー進行
           const activeElapsed = elapsed - 800;
           const pct = Math.min(100, Math.round((activeElapsed / scanDurationMs) * 100));
           document.getElementById('progressBar').style.width = pct + '%';
@@ -1371,7 +1383,6 @@
       rawSignals.length = 0;
       timestamps.length = 0;
 
-      // 最初の0.8秒間をウォームアップに設定
       isWarmingUp = true;
       scanStartTime = performance.now();
       isScanning = true;
