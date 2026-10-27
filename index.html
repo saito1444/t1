@@ -267,7 +267,6 @@
     }
     .baseline-item b { color: #38bdf8; }
 
-    /* 今回の測定結果を明確に記録したログ専用カード */
     .recorded-log-card {
       width: 100%;
       max-width: 380px;
@@ -598,7 +597,7 @@
     <div class="progress-bar" id="progressBar"></div>
   </div>
 
-  <!-- 振幅スペクトル描画キャンバス（動的オートスケール実装） -->
+  <!-- 512点ゼロパディング高密度FFT振幅スペクトル -->
   <div class="spectrum-panel">
     <div class="spectrum-title">rPPG AMPLITUDE SPECTRUM (0 - 3.0 Hz)</div>
     <canvas id="spectrumCanvas"></canvas>
@@ -632,15 +631,12 @@
     <div class="baseline-item" id="baseCountText">累計計測: 0回</div>
   </div>
 
-  <!-- 最新の記録を明示するログカード -->
   <div class="recorded-log-card" id="recordedLogCard">
     <div class="recorded-log-header">
       <span>最新測定ログをブラウザに永続記録完了</span>
       <span id="logRecordedTime">--:--:--</span>
     </div>
-    <div class="recorded-log-body" id="logRecordedBody">
-      <!-- JavaScriptで動的挿入 -->
-    </div>
+    <div class="recorded-log-body" id="logRecordedBody"></div>
   </div>
 
   <div id="agentActionCard" class="agent-action-card">
@@ -698,9 +694,7 @@
     let currentWaveColor = '#38bdf8';
 
     let bp_x1 = 0, bp_x2 = 0, bp_y1 = 0, bp_y2 = 0;
-    let lastValidSignal = 0;
 
-    /* === localStorage による日跨ぎ履歴管理機能 === */
     function getStoredHistory() {
       try {
         const stored = localStorage.getItem('rppg_vital_history');
@@ -826,6 +820,7 @@
       };
     }
 
+    /* === CHROM法による高感度皮膚色差信号抽出（不自然なリミッター排除） === */
     function extractSkinChromSignal(multiRoi) {
       try {
         let totalR = 0, totalG = 0, totalB = 0, totalCount = 0;
@@ -847,16 +842,26 @@
         const G = totalG / totalCount;
         const B = totalB / totalCount;
 
-        // CHROM色度信号の直接合成（感度を回復）
-        const Xs = 3 * R - 2 * G;
-        const Ys = 1.5 * R + G - 1.5 * B;
-        const raw = Xs - 0.7 * Ys;
-
-        if (Math.abs(raw - lastValidSignal) > 15.0 && lastValidSignal !== 0) {
-          return lastValidSignal;
+        rgbBuffer.r.push(R);
+        rgbBuffer.g.push(G);
+        rgbBuffer.b.push(B);
+        if (rgbBuffer.r.length > 60) {
+          rgbBuffer.r.shift();
+          rgbBuffer.g.shift();
+          rgbBuffer.b.shift();
         }
-        lastValidSignal = raw;
-        return raw;
+
+        const meanR = rgbBuffer.r.reduce((a, b) => a + b, 0) / rgbBuffer.r.length;
+        const meanG = rgbBuffer.g.reduce((a, b) => a + b, 0) / rgbBuffer.g.length;
+        const meanB = rgbBuffer.b.reduce((a, b) => a + b, 0) / rgbBuffer.b.length;
+
+        const normR = meanR > 0 ? R / meanR : 1;
+        const normG = meanG > 0 ? G / meanG : 1;
+        const normB = meanB > 0 ? B / meanB : 1;
+
+        const Xs = 3 * normR - 2 * normG;
+        const Ys = 1.5 * normR + normG - 1.5 * normB;
+        return Xs - 0.7 * Ys;
       } catch (e) {
         return null;
       }
@@ -979,16 +984,16 @@
       }
     }
 
-    /* === 動的オートスケール型振幅スペクトル描画（底辺張り付きを完全解消） === */
+    /* === 512点ゼロパディング高密度FFT振幅スペクトル（滑らかな曲線で山を形成） === */
     function drawAmplitudeSpectrum(signals, times) {
       if (signals.length < 24) return { snrDb: "0.0", peakFreq: 0 };
 
-      const N = 128;
-      const { resampledSignals } = resampleUniform(signals.slice(-120), times.slice(-120), 30.0);
+      const N = 512; // 解像度を大幅に引き上げ
+      const { resampledSignals } = resampleUniform(signals.slice(-150), times.slice(-150), 30.0);
       
       const real = new Float32Array(N);
       const imag = new Float32Array(N);
-      const len = Math.min(N, resampledSignals.length);
+      const len = Math.min(150, resampledSignals.length);
       const offset = resampledSignals.length - len;
 
       let mean = 0;
@@ -1005,11 +1010,11 @@
 
       const maxFreq = 3.0;
       const fs = 30.0;
-      const freqStep = fs / N;
+      const freqStep = fs / N; // 約0.058Hzごとの高密度サンプリング
       const numBins = Math.floor(maxFreq / freqStep);
 
       const amps = [];
-      let maxAmp = 0.00001;
+      let maxAmp = 0.0001;
       let peakIdx = 0;
 
       for (let i = 0; i < numBins; i++) {
@@ -1030,9 +1035,7 @@
       for (let i = 1; i < numBins; i++) {
         const p = amps[i] * amps[i];
         totalPower += p;
-        if (Math.abs(i - peakIdx) <= 1 || (peakIdx * 2 < numBins && Math.abs(i - peakIdx * 2) <= 1)) {
-          signalPower += p;
-        }
+        if (Math.abs(i - peakIdx) <= 2) signalPower += p;
       }
       const noisePower = Math.max(0.0001, totalPower - signalPower);
       const snrVal = signalPower > 0 ? (10 * Math.log10(signalPower / noisePower)).toFixed(1) : '0.0';
@@ -1059,11 +1062,10 @@
         specCtx.fillText(f.toFixed(1), x, specCanvas.height - 4);
       }
 
-      // 動的オートスケール（ピーク値に合わせて山の高さを最適化）
-      const displayMax = Math.max(0.01, maxAmp * 1.25);
-
+      // オートスケールで滑らかな山を描画
+      const displayMax = Math.max(0.005, maxAmp * 1.25);
       specCtx.strokeStyle = currentWaveColor;
-      specCtx.lineWidth = 2.0;
+      specCtx.lineWidth = 1.8;
       specCtx.beginPath();
 
       for (let i = 0; i < numBins; i++) {
@@ -1075,7 +1077,7 @@
       }
       specCtx.stroke();
 
-      // 呼吸帯域マーカー（0.4 Hz）
+      // 呼吸帯域（0.4Hz）マーカー
       const respX = padL + (0.4 / 3.0) * plotW;
       specCtx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
       specCtx.setLineDash([4, 2, 1, 2]);
@@ -1086,7 +1088,7 @@
       specCtx.fillStyle = '#94a3b8';
       specCtx.fillText('Resp 0.4Hz', respX, padT - 6);
 
-      // 心拍数マーカー（Estimated HR：山頂に自動追従）
+      // 心拍数マーカー（ピークに滑らかに追従）
       if (peakFreq >= 0.75) {
         const hrX = padL + (peakFreq / 3.0) * plotW;
         specCtx.strokeStyle = '#f43f5e';
@@ -1242,7 +1244,6 @@
       measureBtn.innerText = `${currentModeSeconds}秒間の生体計測を開始`;
 
       bp_x1 = 0; bp_x2 = 0; bp_y1 = 0; bp_y2 = 0;
-      lastValidSignal = 0;
       rgbBuffer.r.length = 0;
       rgbBuffer.g.length = 0;
       rgbBuffer.b.length = 0;
@@ -1457,7 +1458,6 @@
         };
       }
 
-      // localStorageへ永続保存
       const now = new Date();
       const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       saveVitalRecord({
@@ -1469,7 +1469,6 @@
         mode: currentModeSeconds
       });
 
-      // 最新の記録完了通知カードを更新・表示
       document.getElementById('logRecordedTime').innerText = dateStr;
       document.getElementById('logRecordedBody').innerHTML = `
         計測日時: <b>${dateStr}</b> (${currentModeSeconds}秒スキャン)<br>
