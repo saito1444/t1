@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>AI表情筋アタック - 喜怒哀楽スコアバトル</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      padding: 14px;
+      background: #090d16;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      user-select: none;
+    }
+
+    .header {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 6px;
+    }
+    .header h1 {
+      font-size: 14px;
+      margin: 0;
+      letter-spacing: 0.05em;
+      color: #38bdf8;
+      font-weight: 700;
+    }
+    .badge {
+      font-size: 10px;
+      background: #020617;
+      border: 1px solid #38bdf8;
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    /* ゲームステージ表示 */
+    .game-box {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      height: 280px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #020617;
+      border: 2px solid #334155;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    video {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      opacity: 0;
+    }
+    #outputCanvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* オーバーレイUI */
+    .overlay-ui {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 10px;
+    }
+    .overlay-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .timer-badge {
+      font-size: 20px;
+      font-family: monospace;
+      font-weight: 900;
+      color: #f59e0b;
+      background: rgba(2, 6, 23, 0.85);
+      border: 1.5px solid #f59e0b;
+      padding: 2px 10px;
+      border-radius: 8px;
+    }
+    .live-score-badge {
+      font-size: 18px;
+      font-family: monospace;
+      font-weight: 900;
+      color: #38bdf8;
+      background: rgba(2, 6, 23, 0.85);
+      border: 1.5px solid #38bdf8;
+      padding: 2px 10px;
+      border-radius: 8px;
+    }
+
+    .match-gauge-container {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.8);
+      border-radius: 8px;
+      padding: 6px 10px;
+      border: 1px solid #334155;
+    }
+    .match-gauge-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+    .gauge-bar-bg {
+      width: 100%;
+      height: 12px;
+      background: #1e293b;
+      border-radius: 6px;
+      overflow: hidden;
+      position: relative;
+    }
+    .gauge-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #0284c7, #38bdf8, #10b981);
+      transition: width 0.08s ease-out;
+    }
+
+    .status-banner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 22px;
+      font-weight: 900;
+      color: #ffffff;
+      text-shadow: 0 0 16px rgba(0,0,0,0.9);
+      background: rgba(2, 6, 23, 0.88);
+      border: 2px solid #38bdf8;
+      padding: 8px 18px;
+      border-radius: 10px;
+      text-align: center;
+      display: none;
+      pointer-events: none;
+    }
+
+    /* ステップナビゲーション */
+    .controls-panel {
+      width: 100%;
+      max-width: 420px;
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .category-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+    .btn-cat {
+      background: #0f172a;
+      border: 1.5px solid #1e293b;
+      color: #94a3b8;
+      padding: 10px 4px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+      transition: all 0.15s ease;
+    }
+    .btn-cat.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: #38bdf8;
+      color: #38bdf8;
+    }
+
+    .btn-main {
+      width: 100%;
+      padding: 13px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.1s ease, filter 0.1s ease;
+    }
+    .btn-main:active { transform: scale(0.98); }
+    .btn-start {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
+    }
+    .btn-main:disabled {
+      background: #1e293b !important;
+      color: #64748b !important;
+      cursor: not-allowed;
+      box-shadow: none !important;
+    }
+
+    /* 結果モーダル */
+    .result-card {
+      width: 100%;
+      max-width: 420px;
+      background: #0f172a;
+      border: 2px solid #38bdf8;
+      border-radius: 12px;
+      padding: 14px;
+      margin-top: 8px;
+      display: none;
+      box-shadow: 0 4px 20px rgba(56, 189, 248, 0.2);
+    }
+    .result-title {
+      font-size: 16px;
+      font-weight: 900;
+      color: #38bdf8;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .result-score-box {
+      background: #020617;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .score-big {
+      font-size: 32px;
+      font-family: monospace;
+      font-weight: 900;
+      color: #10b981;
+    }
+    .name-input-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .name-input {
+      flex: 1;
+      background: #020617;
+      border: 1px solid #334155;
+      color: #fff;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .btn-register {
+      background: #10b981;
+      color: #fff;
+      border: none;
+      padding: 0 14px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* ランキングボード */
+    .ranking-card {
+      width: 100%;
+      max-width: 420px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 10px;
+      margin-top: 10px;
+    }
+    .ranking-header {
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 4px;
+      margin-bottom: 6px;
+    }
+    .ranking-list {
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .ranking-row {
+      display: flex;
+      justify-content: space-between;
+      background: rgba(2, 6, 23, 0.6);
+      padding: 5px 8px;
+      border-radius: 4px;
+    }
+    .rank-top1 { border-left: 3px solid #f59e0b; color: #f59e0b; font-weight: 700; }
+    .rank-top2 { border-left: 3px solid #94a3b8; color: #cbd5e1; }
+    .rank-top3 { border-left: 3px solid #b45309; color: #d97706; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>AI表情筋アタック (EMOTION MASTER)</h1>
+    <div class="badge" id="cameraStatusBadge">カメラ未起動</div>
+  </div>
+
+  <div class="game-box">
+    <video id="inputVideo" playsinline autoplay muted></video>
+    <canvas id="outputCanvas"></canvas>
+
+    <div class="status-banner" id="statusBanner">真顔をスキャン中...</div>
+
+    <div class="overlay-ui">
+      <div class="overlay-top">
+        <div class="timer-badge" id="timerBadge">05.00s</div>
+        <div class="live-score-badge" id="liveScoreBadge">SCORE: 0</div>
+      </div>
+      
+      <div class="match-gauge-container">
+        <div class="match-gauge-header">
+          <span id="targetEmotionLabel">AI理想表情 一致度</span>
+          <span id="matchPercentLabel">0%</span>
+        </div>
+        <div class="gauge-bar-bg">
+          <div class="gauge-bar-fill" id="gaugeBarFill"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls-panel">
+    <div class="category-grid">
+      <div class="btn-cat active" id="catSmile" onclick="selectCategory('smile')">笑顔 部門</div>
+      <div class="btn-cat" id="catAnger" onclick="selectCategory('anger')">怒り 部門</div>
+      <div class="btn-cat" id="catSad" onclick="selectCategory('sad')">悲しみ 部門</div>
+    </div>
+
+    <button id="mainBtn" class="btn-main btn-start" onclick="handleMainAction()">カメラを起動する</button>
+  </div>
+
+  <!-- スコア登録・結果画面 -->
+  <div class="result-card" id="resultCard">
+    <div class="result-title" id="resultTitle">チャレンジ成功！</div>
+    <div class="result-score-box">
+      <div style="font-size:11px; color:#94a3b8;">獲得トータルスコア</div>
+      <div class="score-big" id="finalScoreVal">0</div>
+      <div style="font-size:10px; color:#38bdf8;" id="aiCommentVal">AI評価：素晴らしい表情筋の可動域です</div>
+    </div>
+
+    <div class="name-input-row">
+      <input type="text" id="playerNameInput" class="name-input" placeholder="ニックネームを入力 (5文字以内)" maxlength="5">
+      <button class="btn-register" onclick="registerScore()">ランキング登録</button>
+    </div>
+  </div>
+
+  <!-- ランキング表示 -->
+  <div class="ranking-card">
+    <div class="ranking-header">
+      <span id="rankingCategoryTitle">笑顔部門 本日のハイスコア TOP 5</span>
+      <button style="background:none;border:none;color:#64748b;font-size:9px;cursor:pointer;" onclick="clearRanking()">初期化</button>
+    </div>
+    <div class="ranking-list" id="rankingList">
+      <!-- JSで動的生成 -->
+    </div>
+  </div>
+
+  <script>
+    const videoElement = document.getElementById('inputVideo');
+    const outputCanvas = document.getElementById('outputCanvas');
+    const outCtx = outputCanvas.getContext('2d');
+
+    let cameraInstance = null;
+    let isCameraReady = false;
+
+    // ゲーム状態: 'idle', 'calibrating', 'countdown', 'battling', 'finished'
+    let gameState = 'idle';
+    let currentCategory = 'smile'; // smile, anger, sad
+
+    let baselineFace = null; // 真顔サンプリングデータ
+    let calibrationFrames = [];
+
+    let battleTimer = null;
+    let battleStartTime = 0;
+    const BATTLE_DURATION = 5000; // 5秒
+    let totalAccumulatedScore = 0;
+    let currentMatchRatio = 0;
+
+    // 理想表情幾何学パラメータ
+    // FACS (Facial Action Coding System) に基づく解剖学的変位係数
+    const EMOTION_CONFIG = {
+      smile: {
+        label: '笑顔部門 (最高の笑顔を見せてください！)',
+        keyPoints: [61, 291, 13, 14, 0, 17, 159, 145, 386, 374],
+        evaluate: (curr, base) => {
+          // 口角間距離の拡張（大頬骨筋）
+          const baseMouthWidth = Math.hypot(base[291].x - base[61].x, base[291].y - base[61].y);
+          const currMouthWidth = Math.hypot(curr[291].x - curr[61].x, curr[291].y - curr[61].y);
+          const mouthStretch = (currMouthWidth - baseMouthWidth) / baseMouthWidth;
+
+          // 口角の引き上がり（鼻翼ベースとのY差分）
+          const baseLipElev = ((base[61].y + base[291].y) / 2) - base[1].y;
+          const currLipElev = ((curr[61].y + curr[291].y) / 2) - curr[1].y;
+          const lipUp = (baseLipElev - currLipElev) * 10; // マイナス方向（上）への変位
+
+          // 目尻の細まり（眼輪筋）
+          const baseLeftEyeH = Math.hypot(base[159].x - base[145].x, base[159].y - base[145].y);
+          const currLeftEyeH = Math.hypot(curr[159].x - curr[145].x, curr[159].y - curr[145].y);
+          const eyeSquint = (baseLeftEyeH - currLeftEyeH) / baseLeftEyeH;
+
+          // 総合一致度（0.0 〜 1.0）
+          const score = (mouthStretch * 2.8) + (lipUp * 1.8) + (eyeSquint * 0.8);
+          return Math.min(1.0, Math.max(0, score * 1.8));
+        }
+      },
+      anger: {
+        label: '怒り部門 (眉間を寄せて睨みつけてください！)',
+        keyPoints: [70, 300, 107, 336, 9, 8],
+        evaluate: (curr, base) => {
+          // 眉頭間距離の接近（皺眉筋）
+          const baseBrowDist = Math.hypot(base[336].x - base[107].x, base[336].y - base[107].y);
+          const currBrowDist = Math.hypot(curr[336].x - curr[107].x, curr[336].y - curr[107].y);
+          const browClinch = (baseBrowDist - currBrowDist) / baseBrowDist;
+
+          // 眉頭の下垂
+          const browDrop = (curr[9].y - base[9].y) * 12;
+
+          // 総合一致度
+          const score = (browClinch * 3.5) + (browDrop * 1.5);
+          return Math.min(1.0, Math.max(0, score * 2.0));
+        }
+      },
+      sad: {
+        label: '悲しみ部門 (眉を八の字にして口角を下げてください！)',
+        keyPoints: [107, 336, 70, 300, 61, 291, 17],
+        evaluate: (curr, base) => {
+          // 眉頭の持ち上がり（前頭筋内側）
+          const browInnerLift = (base[9].y - curr[9].y) * 15;
+
+          // 口角の下垂（口角下制筋）
+          const baseLipElev = ((base[61].y + base[291].y) / 2) - base[1].y;
+          const currLipElev = ((curr[61].y + curr[291].y) / 2) - curr[1].y;
+          const lipDown = (currLipElev - baseLipElev) * 12;
+
+          const score = (browInnerLift * 2.2) + (lipDown * 2.0);
+          return Math.min(1.0, Math.max(0, score * 1.9));
+        }
+      }
+    };
+
+    function selectCategory(cat) {
+      if (gameState === 'battling' || gameState === 'calibrating') return;
+      currentCategory = cat;
+      document.getElementById('catSmile').classList.toggle('active', cat === 'smile');
+      document.getElementById('catAnger').classList.toggle('active', cat === 'anger');
+      document.getElementById('catSad').classList.toggle('active', cat === 'sad');
+
+      document.getElementById('targetEmotionLabel').innerText = `AI理想一致度 (${currentCategory.toUpperCase()})`;
+      updateRankingUI();
+    }
+
+    function handleMainAction() {
+      if (!isCameraReady) {
+        startCamera();
+      } else if (gameState === 'idle' || gameState === 'finished') {
+        startCalibrationSequence();
+      }
+    }
+
+    async function startCamera() {
+      const btn = document.getElementById('mainBtn');
+      btn.disabled = true;
+      btn.innerText = 'カメラ接続中...';
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        videoElement.srcObject = stream;
+        await videoElement.play();
+
+        outputCanvas.width = 640;
+        outputCanvas.height = 480;
+
+        cameraInstance = new Camera(videoElement, {
+          onFrame: async () => { await faceMesh.send({ image: videoElement }); },
+          width: 640, height: 480
+        });
+        await cameraInstance.start();
+
+        isCameraReady = true;
+        document.getElementById('cameraStatusBadge').innerText = '準備完了';
+        btn.disabled = false;
+        btn.innerText = '真顔スキャンを開始 (ゲームスタート)';
+      } catch (e) {
+        alert('カメラの起動に失敗しました。');
+        btn.disabled = false;
+        btn.innerText = 'カメラを起動する';
+      }
+    }
+
+    // 真顔サンプリング
+    function startCalibrationSequence() {
+      document.getElementById('resultCard').style.display = 'none';
+      document.getElementById('mainBtn').disabled = true;
+      document.getElementById('mainBtn').innerText = '真顔を測定しています...';
+
+      const banner = document.getElementById('statusBanner');
+      banner.style.display = 'block';
+      banner.innerText = '真顔でカメラを直視してください';
+      banner.style.borderColor = '#38bdf8';
+
+      calibrationFrames = [];
+      gameState = 'calibrating';
+    }
+
+    // 5秒バトル開始
+    function startBattle() {
+      gameState = 'battling';
+      totalAccumulatedScore = 0;
+      battleStartTime = performance.now();
+
+      const banner = document.getElementById('statusBanner');
+      banner.style.display = 'block';
+      banner.innerText = EMOTION_CONFIG[currentCategory].label;
+      banner.style.borderColor = '#f59e0b';
+
+      document.getElementById('mainBtn').disabled = true;
+      document.getElementById('mainBtn').innerText = '表情筋バトル進行中！';
+
+      battleTimer = requestAnimationFrame(battleLoop);
+    }
+
+    function battleLoop(now) {
+      if (gameState !== 'battling') return;
+
+      const elapsed = now - battleStartTime;
+      const remain = Math.max(0, BATTLE_DURATION - elapsed);
+
+      const sec = (remain / 1000).toFixed(2);
+      document.getElementById('timerBadge').innerText = `${sec.padStart(5, '0')}s`;
+
+      // スコア累積（一致度 × フレーム係数）
+      totalAccumulatedScore += Math.round(currentMatchRatio * 45);
+      document.getElementById('liveScoreBadge').innerText = `SCORE: ${totalAccumulatedScore}`;
+
+      if (remain <= 0) {
+        finishBattle();
+      } else {
+        battleTimer = requestAnimationFrame(battleLoop);
+      }
+    }
+
+    function finishBattle() {
+      gameState = 'finished';
+      cancelAnimationFrame(battleTimer);
+
+      document.getElementById('statusBanner').style.display = 'none';
+      document.getElementById('timerBadge').innerText = '00.00s';
+
+      const mainBtn = document.getElementById('mainBtn');
+      mainBtn.disabled = false;
+      mainBtn.innerText = 'もう一度挑戦する';
+
+      // 結果表示
+      document.getElementById('finalScoreVal').innerText = totalAccumulatedScore;
+      
+      let comment = '素晴らしい可動域！表情筋のエキスパートです。';
+      if (totalAccumulatedScore < 2000) comment = '緊張していましたか？もっと大胆に筋肉を動かしてみましょう！';
+      else if (totalAccumulatedScore > 5000) comment = '殿堂入りレベル！AIの想像を超える圧倒的な表現力です。';
+      document.getElementById('aiCommentVal').innerText = comment;
+
+      document.getElementById('resultCard').style.display = 'block';
+    }
+
+    // MediaPipe 描画・解析ループ
+    const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+
+    faceMesh.onResults((res) => {
+      outCtx.save();
+      outCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+      
+      // 鏡像反転
+      outCtx.translate(outputCanvas.width, 0);
+      outCtx.scale(-1, 1);
+      outCtx.drawImage(res.image, 0, 0, outputCanvas.width, outputCanvas.height);
+
+      if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
+        const lm = res.multiFaceLandmarks[0];
+
+        // 幾何学メッシュのサイバー描画
+        drawCyberFacialMesh(lm);
+
+        // 真顔キャリブレーション処理
+        if (gameState === 'calibrating') {
+          calibrationFrames.push(lm);
+          if (calibrationFrames.length >= 30) { // 1秒分蓄積
+            baselineFace = averageLandmarks(calibrationFrames);
+            document.getElementById('statusBanner').innerText = '3秒後にスタート！';
+            setTimeout(() => {
+              startBattle();
+            }, 1200);
+          }
+        }
+
+        // バトル中の一致度評価
+        if (gameState === 'battling' && baselineFace) {
+          const match = EMOTION_CONFIG[currentCategory].evaluate(lm, baselineFace);
+          currentMatchRatio = match;
+
+          const pct = Math.round(match * 100);
+          document.getElementById('matchPercentLabel').innerText = `${pct}%`;
+          document.getElementById('gaugeBarFill').style.width = `${pct}%`;
+
+          // 一致度が高いときは画面にエフェクト
+          if (match > 0.8) {
+            drawHighMatchGlow(lm);
+          }
+        }
+      }
+      outCtx.restore();
+    });
+
+    function averageLandmarks(frameList) {
+      const avg = [];
+      const numPoints = frameList[0].length;
+      for (let i = 0; i < numPoints; i++) {
+        let sx = 0, sy = 0, sz = 0;
+        frameList.forEach(frame => {
+          sx += frame[i].x;
+          sy += frame[i].y;
+          sz += frame[i].z;
+        });
+        avg.push({
+          x: sx / frameList.length,
+          y: sy / frameList.length,
+          z: sz / frameList.length
+        });
+      }
+      return avg;
+    }
+
+    function drawCyberFacialMesh(landmarks) {
+      outCtx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+      outCtx.lineWidth = 1;
+
+      // 輪郭と主要パーツのライン
+      const keyConnections = [
+        [61, 146], [146, 91], [91, 181], [181, 84], [84, 17],
+        [17, 314], [314, 405], [405, 321], [321, 375], [375, 291],
+        [61, 185], [185, 40], [40, 39], [39, 37], [37, 0],
+        [0, 267], [267, 269], [269, 270], [270, 409], [409, 291],
+        [70, 63], [63, 105], [105, 66], [66, 107],
+        [336, 296], [296, 334], [334, 293], [293, 300]
+      ];
+
+      keyConnections.forEach(([p1, p2]) => {
+        const pt1 = landmarks[p1];
+        const pt2 = landmarks[p2];
+        outCtx.beginPath();
+        outCtx.moveTo(pt1.x * outputCanvas.width, pt1.y * outputCanvas.height);
+        outCtx.lineTo(pt2.x * outputCanvas.width, pt2.y * outputCanvas.height);
+        outCtx.stroke();
+      });
+
+      // ポイント点
+      outCtx.fillStyle = '#38bdf8';
+      [61, 291, 107, 336, 1, 13, 14].forEach(idx => {
+        const pt = landmarks[idx];
+        outCtx.beginPath();
+        outCtx.arc(pt.x * outputCanvas.width, pt.y * outputCanvas.height, 2.5, 0, Math.PI * 2);
+        outCtx.fill();
+      });
+    }
+
+    function drawHighMatchGlow(landmarks) {
+      outCtx.save();
+      outCtx.strokeStyle = '#10b981';
+      outCtx.lineWidth = 3;
+      outCtx.shadowColor = '#10b981';
+      outCtx.shadowBlur = 12;
+
+      // 口元や眉のハイライト
+      [61, 291].forEach(idx => {
+        const pt = landmarks[idx];
+        outCtx.beginPath();
+        outCtx.arc(pt.x * outputCanvas.width, pt.y * outputCanvas.height, 6, 0, Math.PI * 2);
+        outCtx.stroke();
+      });
+      outCtx.restore();
+    }
+
+    /* ローカルストレージ ランキング機能 */
+    function getRanking(cat) {
+      try {
+        const data = localStorage.getItem(`ranking_${cat}`);
+        return data ? JSON.parse(data) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveRanking(cat, list) {
+      try {
+        localStorage.setItem(`ranking_${cat}`, JSON.stringify(list));
+      } catch (e) {}
+    }
+
+    function registerScore() {
+      const nameInput = document.getElementById('playerNameInput');
+      const name = nameInput.value.trim() || '名無し';
+
+      const ranking = getRanking(currentCategory);
+      ranking.push({ name: name, score: totalAccumulatedScore, date: new Date().toLocaleTimeString() });
+      ranking.sort((a, b) => b.score - a.score);
+      const top5 = ranking.slice(0, 5);
+
+      saveRanking(currentCategory, top5);
+      updateRankingUI();
+
+      nameInput.value = '';
+      document.getElementById('resultCard').style.display = 'none';
+      alert('ランキングに登録しました！');
+    }
+
+    function updateRankingUI() {
+      const catLabels = { smile: '笑顔部門', anger: '怒り部門', sad: '悲しみ部門' };
+      document.getElementById('rankingCategoryTitle').innerText = `${catLabels[currentCategory]} 本日のハイスコア TOP 5`;
+
+      const listEl = document.getElementById('rankingList');
+      const ranking = getRanking(currentCategory);
+
+      if (ranking.length === 0) {
+        listEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:4px 0;">まだスコアがありません</div>';
+        return;
+      }
+
+      listEl.innerHTML = ranking.map((r, i) => `
+        <div class="ranking-row ${i === 0 ? 'rank-top1' : (i === 1 ? 'rank-top2' : (i === 2 ? 'rank-top3' : ''))}">
+          <span><b>#${i + 1}</b> ${r.name}</span>
+          <span><b>${r.score.toLocaleString()}</b> pts <span style="font-size:9px;color:#64748b;">(${r.date})</span></span>
+        </div>
+      `).join('');
+    }
+
+    function clearRanking() {
+      if (confirm(`${currentCategory}部門のランキングをリセットしますか？`)) {
+        localStorage.removeItem(`ranking_${currentCategory}`);
+        updateRankingUI();
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      updateRankingUI();
+    });
+  </script>
+</body>
+</html>
