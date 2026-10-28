@@ -150,13 +150,15 @@
       font-weight: 900;
       color: #ffffff;
       text-shadow: 0 0 16px rgba(0,0,0,0.9);
-      background: rgba(2, 6, 23, 0.88);
+      background: rgba(2, 6, 23, 0.92);
       border: 2px solid #38bdf8;
-      padding: 8px 18px;
-      border-radius: 10px;
+      padding: 10px 22px;
+      border-radius: 12px;
       text-align: center;
       display: none;
       pointer-events: none;
+      white-space: nowrap;
+      transition: all 0.2s ease;
     }
 
     /* ステップナビゲーション */
@@ -322,7 +324,7 @@
     <video id="inputVideo" playsinline autoplay muted></video>
     <canvas id="outputCanvas"></canvas>
 
-    <div class="status-banner" id="statusBanner">真顔をスキャン中...</div>
+    <div class="status-banner" id="statusBanner">真顔でカメラを直視してください</div>
 
     <div class="overlay-ui">
       <div class="overlay-top">
@@ -332,7 +334,7 @@
       
       <div class="match-gauge-container">
         <div class="match-gauge-header">
-          <span id="targetEmotionLabel">AI理想表情 一致度</span>
+          <span id="targetEmotionLabel">AI理想表情 一致度 (SMILE)</span>
           <span id="matchPercentLabel">0%</span>
         </div>
         <div class="gauge-bar-bg">
@@ -373,9 +375,7 @@
       <span id="rankingCategoryTitle">笑顔部門 本日のハイスコア TOP 5</span>
       <button style="background:none;border:none;color:#64748b;font-size:9px;cursor:pointer;" onclick="clearRanking()">初期化</button>
     </div>
-    <div class="ranking-list" id="rankingList">
-      <!-- JSで動的生成 -->
-    </div>
+    <div class="ranking-list" id="rankingList"></div>
   </div>
 
   <script>
@@ -388,47 +388,71 @@
 
     // ゲーム状態: 'idle', 'calibrating', 'countdown', 'battling', 'finished'
     let gameState = 'idle';
-    let currentCategory = 'smile'; // smile, anger, sad
+    let currentCategory = 'smile';
 
-    let baselineFace = null; // 真顔サンプリングデータ
+    let baselineFace = null;
     let calibrationFrames = [];
 
     let battleTimer = null;
+    let countdownInterval = null;
     let battleStartTime = 0;
-    const BATTLE_DURATION = 5000; // 5秒
+    const BATTLE_DURATION = 5000;
     let totalAccumulatedScore = 0;
     let currentMatchRatio = 0;
 
-    // 理想表情幾何学パラメータ
     // FACS (Facial Action Coding System) に基づく解剖学的変位係数
     const EMOTION_CONFIG = {
       smile: {
-        label: '笑顔部門 (最高の笑顔を見せてください！)',
-        keyPoints: [61, 291, 13, 14, 0, 17, 159, 145, 386, 374],
+        label: '笑顔部門 (目元まで全力の笑顔を見せてください！)',
         evaluate: (curr, base) => {
-          // 口角間距離の拡張（大頬骨筋）
+          // 1. 口角の横幅拡張（大頬骨筋）
           const baseMouthWidth = Math.hypot(base[291].x - base[61].x, base[291].y - base[61].y);
           const currMouthWidth = Math.hypot(curr[291].x - curr[61].x, curr[291].y - curr[61].y);
           const mouthStretch = (currMouthWidth - baseMouthWidth) / baseMouthWidth;
 
-          // 口角の引き上がり（鼻翼ベースとのY差分）
+          // 2. 口角の垂直方向への引き上がり
           const baseLipElev = ((base[61].y + base[291].y) / 2) - base[1].y;
           const currLipElev = ((curr[61].y + curr[291].y) / 2) - curr[1].y;
-          const lipUp = (baseLipElev - currLipElev) * 10; // マイナス方向（上）への変位
+          const lipUp = (baseLipElev - currLipElev) * 12;
 
-          // 目尻の細まり（眼輪筋）
+          // 3. 両目の細まり・眼輪筋の収縮（デュシェンヌ・スマイル必須条件）
           const baseLeftEyeH = Math.hypot(base[159].x - base[145].x, base[159].y - base[145].y);
           const currLeftEyeH = Math.hypot(curr[159].x - curr[145].x, curr[159].y - curr[145].y);
-          const eyeSquint = (baseLeftEyeH - currLeftEyeH) / baseLeftEyeH;
+          const leftEyeSquint = (baseLeftEyeH - currLeftEyeH) / baseLeftEyeH;
 
-          // 総合一致度（0.0 〜 1.0）
-          const score = (mouthStretch * 2.8) + (lipUp * 1.8) + (eyeSquint * 0.8);
-          return Math.min(1.0, Math.max(0, score * 1.8));
+          const baseRightEyeH = Math.hypot(base[386].x - base[374].x, base[386].y - base[374].y);
+          const currRightEyeH = Math.hypot(curr[386].x - curr[374].x, curr[386].y - curr[374].y);
+          const rightEyeSquint = (baseRightEyeH - currRightEyeH) / baseRightEyeH;
+
+          const eyeSquintAvg = Math.max(0, (leftEyeSquint + rightEyeSquint) / 2);
+
+          // 4. 頬のトップ（チーク）の持ち上がり
+          const baseCheekElev = ((base[117].y + base[346].y) / 2) - base[1].y;
+          const currCheekElev = ((curr[117].y + curr[346].y) / 2) - curr[1].y;
+          const cheekUp = Math.max(0, (baseCheekElev - currCheekElev) * 8);
+
+          // 【厳格化判定】：目が細くなっていない（口先だけの作り笑い）は大幅減点
+          let duchenneGate = 1.0;
+          if (eyeSquintAvg < 0.12) {
+            duchenneGate = 0.35; // 目元が動いていない場合は最大でも35%に抑え込む
+          } else if (eyeSquintAvg < 0.22) {
+            duchenneGate = 0.70;
+          }
+
+          // 基礎変位スコア（要求ハードルを厳格化）
+          const rawScore = (Math.max(0, mouthStretch - 0.05) * 2.2) + 
+                           (Math.max(0, lipUp - 0.03) * 2.5) + 
+                           (eyeSquintAvg * 2.0) + 
+                           (cheekUp * 1.2);
+
+          const constrainedScore = Math.min(1.0, Math.max(0, rawScore * duchenneGate));
+
+          // 指数カーブを適用（中途半端な笑顔は急激に削られ、90%以上の極限笑顔だけが跳ね上がる）
+          return Math.pow(constrainedScore, 1.6);
         }
       },
       anger: {
-        label: '怒り部門 (眉間を寄せて睨みつけてください！)',
-        keyPoints: [70, 300, 107, 336, 9, 8],
+        label: '怒り部門 (眉間を寄せて鋭く睨みつけてください！)',
         evaluate: (curr, base) => {
           // 眉頭間距離の接近（皺眉筋）
           const baseBrowDist = Math.hypot(base[336].x - base[107].x, base[336].y - base[107].y);
@@ -438,14 +462,12 @@
           // 眉頭の下垂
           const browDrop = (curr[9].y - base[9].y) * 12;
 
-          // 総合一致度
           const score = (browClinch * 3.5) + (browDrop * 1.5);
           return Math.min(1.0, Math.max(0, score * 2.0));
         }
       },
       sad: {
         label: '悲しみ部門 (眉を八の字にして口角を下げてください！)',
-        keyPoints: [107, 336, 70, 300, 61, 291, 17],
         evaluate: (curr, base) => {
           // 眉頭の持ち上がり（前頭筋内側）
           const browInnerLift = (base[9].y - curr[9].y) * 15;
@@ -462,13 +484,13 @@
     };
 
     function selectCategory(cat) {
-      if (gameState === 'battling' || gameState === 'calibrating') return;
+      if (gameState === 'battling' || gameState === 'calibrating' || gameState === 'countdown') return;
       currentCategory = cat;
       document.getElementById('catSmile').classList.toggle('active', cat === 'smile');
       document.getElementById('catAnger').classList.toggle('active', cat === 'anger');
       document.getElementById('catSad').classList.toggle('active', cat === 'sad');
 
-      document.getElementById('targetEmotionLabel').innerText = `AI理想一致度 (${currentCategory.toUpperCase()})`;
+      document.getElementById('targetEmotionLabel').innerText = `AI理想表情 一致度 (${currentCategory.toUpperCase()})`;
       updateRankingUI();
     }
 
@@ -507,13 +529,13 @@
         btn.disabled = false;
         btn.innerText = '真顔スキャンを開始 (ゲームスタート)';
       } catch (e) {
-        alert('カメラの起動に失敗しました。');
+        alert('カメラの起動に失敗しました。カメラの利用権限を許可してください。');
         btn.disabled = false;
         btn.innerText = 'カメラを起動する';
       }
     }
 
-    // 真顔サンプリング
+    // 真顔サンプリング開始
     function startCalibrationSequence() {
       document.getElementById('resultCard').style.display = 'none';
       document.getElementById('mainBtn').disabled = true;
@@ -521,11 +543,39 @@
 
       const banner = document.getElementById('statusBanner');
       banner.style.display = 'block';
-      banner.innerText = '真顔でカメラを直視してください';
+      banner.innerText = '真顔でカメラを直視してください (約1秒)';
       banner.style.borderColor = '#38bdf8';
+      banner.style.color = '#38bdf8';
 
       calibrationFrames = [];
       gameState = 'calibrating';
+    }
+
+    // カウントダウンシーケンス（3 -> 2 -> 1 -> START!!）
+    function runStartCountdown() {
+      gameState = 'countdown';
+      const banner = document.getElementById('statusBanner');
+      banner.style.borderColor = '#f59e0b';
+      banner.style.color = '#f59e0b';
+
+      let count = 3;
+      banner.innerText = `準備... ${count}`;
+
+      if (countdownInterval) clearInterval(countdownInterval);
+
+      countdownInterval = setInterval(() => {
+        count--;
+        if (count > 0) {
+          banner.innerText = `準備... ${count}`;
+        } else if (count === 0) {
+          banner.innerText = 'START!! 全力で！';
+          banner.style.color = '#10b981';
+          banner.style.borderColor = '#10b981';
+        } else {
+          clearInterval(countdownInterval);
+          startBattle();
+        }
+      }, 1000);
     }
 
     // 5秒バトル開始
@@ -535,9 +585,9 @@
       battleStartTime = performance.now();
 
       const banner = document.getElementById('statusBanner');
-      banner.style.display = 'block';
       banner.innerText = EMOTION_CONFIG[currentCategory].label;
       banner.style.borderColor = '#f59e0b';
+      banner.style.color = '#ffffff';
 
       document.getElementById('mainBtn').disabled = true;
       document.getElementById('mainBtn').innerText = '表情筋バトル進行中！';
@@ -554,8 +604,9 @@
       const sec = (remain / 1000).toFixed(2);
       document.getElementById('timerBadge').innerText = `${sec.padStart(5, '0')}s`;
 
-      // スコア累積（一致度 × フレーム係数）
-      totalAccumulatedScore += Math.round(currentMatchRatio * 45);
+      // 高一致度（80%以上）をキープした時だけ爆発的に加算される指数加算
+      const powerScore = Math.pow(currentMatchRatio, 2.0) * 85;
+      totalAccumulatedScore += Math.round(powerScore);
       document.getElementById('liveScoreBadge').innerText = `SCORE: ${totalAccumulatedScore}`;
 
       if (remain <= 0) {
@@ -577,11 +628,11 @@
       mainBtn.innerText = 'もう一度挑戦する';
 
       // 結果表示
-      document.getElementById('finalScoreVal').innerText = totalAccumulatedScore;
+      document.getElementById('finalScoreVal').innerText = totalAccumulatedScore.toLocaleString();
       
       let comment = '素晴らしい可動域！表情筋のエキスパートです。';
-      if (totalAccumulatedScore < 2000) comment = '緊張していましたか？もっと大胆に筋肉を動かしてみましょう！';
-      else if (totalAccumulatedScore > 5000) comment = '殿堂入りレベル！AIの想像を超える圧倒的な表現力です。';
+      if (totalAccumulatedScore < 1500) comment = '緊張していましたか？目元や口角をもっと大胆に動かしてみましょう！';
+      else if (totalAccumulatedScore > 4000) comment = '殿堂入りレベル！AIの想像を超える圧倒的なデュシェンヌ・スマイルです。';
       document.getElementById('aiCommentVal').innerText = comment;
 
       document.getElementById('resultCard').style.display = 'block';
@@ -609,12 +660,16 @@
         // 真顔キャリブレーション処理
         if (gameState === 'calibrating') {
           calibrationFrames.push(lm);
-          if (calibrationFrames.length >= 30) { // 1秒分蓄積
+          if (calibrationFrames.length >= 30) { // 1秒分蓄積完了
             baselineFace = averageLandmarks(calibrationFrames);
-            document.getElementById('statusBanner').innerText = '3秒後にスタート！';
+            document.getElementById('statusBanner').innerText = '真顔を記録完了！';
+            document.getElementById('statusBanner').style.borderColor = '#10b981';
+            document.getElementById('statusBanner').style.color = '#10b981';
+            
+            // 0.8秒余韻を持たせてから「3, 2, 1」カウントダウンへ
             setTimeout(() => {
-              startBattle();
-            }, 1200);
+              runStartCountdown();
+            }, 800);
           }
         }
 
@@ -627,7 +682,6 @@
           document.getElementById('matchPercentLabel').innerText = `${pct}%`;
           document.getElementById('gaugeBarFill').style.width = `${pct}%`;
 
-          // 一致度が高いときは画面にエフェクト
           if (match > 0.8) {
             drawHighMatchGlow(lm);
           }
@@ -659,7 +713,6 @@
       outCtx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
       outCtx.lineWidth = 1;
 
-      // 輪郭と主要パーツのライン
       const keyConnections = [
         [61, 146], [146, 91], [91, 181], [181, 84], [84, 17],
         [17, 314], [314, 405], [405, 321], [321, 375], [375, 291],
@@ -678,7 +731,6 @@
         outCtx.stroke();
       });
 
-      // ポイント点
       outCtx.fillStyle = '#38bdf8';
       [61, 291, 107, 336, 1, 13, 14].forEach(idx => {
         const pt = landmarks[idx];
@@ -695,7 +747,6 @@
       outCtx.shadowColor = '#10b981';
       outCtx.shadowBlur = 12;
 
-      // 口元や眉のハイライト
       [61, 291].forEach(idx => {
         const pt = landmarks[idx];
         outCtx.beginPath();
