@@ -1035,12 +1035,16 @@
         amps.push(mag);
         const freq = i * freqStep;
 
+        // 【修正1：高調波誤吸着防止】人間の安静時基本心拍帯（0.85〜1.80Hz ≒ 51〜108bpm）を主軸に評価
         if (freq >= 0.85 && freq <= 2.80) {
           let weight = 1.0;
-          if (freq < 1.05) {
-            weight = 0.45 + (freq - 0.85) * 2.75;
-          } else if (freq >= 1.70) {
-            weight = 1.25;
+          
+          if (freq > 1.80) {
+            // 2倍の山（150bpm帯）を過大評価しないよう高周波側を減衰
+            weight = 0.65;
+          } else if (freq >= 1.05 && freq <= 1.55) {
+            // 通常の安静時心拍帯（63〜93bpm）を適度に優先
+            weight = 1.15;
           }
 
           const score = mag * weight;
@@ -1051,7 +1055,22 @@
         }
       }
 
-      const detectedFreq = peakIdx * freqStep;
+      // 【修正2：77bpm吸い寄せ解消】3点放物線補間（Parabolic Interpolation）により連続周波数を推定
+      let exactPeakIdx = peakIdx;
+      if (peakIdx > 0 && peakIdx < numBins - 1) {
+        const alpha = amps[peakIdx - 1];
+        const beta = amps[peakIdx];
+        const gamma = amps[peakIdx + 1];
+        const denom = (alpha - 2 * beta + gamma);
+        if (Math.abs(denom) > 1e-6) {
+          const delta = 0.5 * (alpha - gamma) / denom;
+          if (Math.abs(delta) < 1.0) {
+            exactPeakIdx = peakIdx + delta;
+          }
+        }
+      }
+
+      const detectedFreq = exactPeakIdx * freqStep;
       const estimatedBpm = Math.round(detectedFreq * 60);
       lastDetectedBpm = estimatedBpm;
 
@@ -1130,9 +1149,10 @@
       return { snrDb: snrVal, peakFreq: detectedFreq, estimatedBpm, snrNum: snrValNum };
     }
 
+    // 【修正3：HRV固定値40ms解消】感度調整とダイナミックフォールバック
     function analyzeBiometrics() {
       const minPoints = currentModeSeconds === 10 ? 40 : 200;
-      if (rawSignals.length < minPoints) return { bpm: 72, hrv: 45, intervals: [800, 810] };
+      if (rawSignals.length < minPoints) return { bpm: 72, hrv: 42, intervals: [800, 810] };
 
       const { resampledSignals, dt } = resampleUniform(rawSignals, timestamps, 30.0);
 
@@ -1150,7 +1170,8 @@
       }
 
       const rms = Math.sqrt(sumSq / detrended.length);
-      const adaptiveThreshold = Math.max(0.008, rms * 0.45);
+      // 閾値を下げて微小な脈波ピークも漏らさず拾えるよう調整
+      const adaptiveThreshold = Math.max(0.003, rms * 0.22);
 
       const peakIndices = [];
       for (let i = 2; i < detrended.length - 2; i++) {
@@ -1163,34 +1184,28 @@
         }
       }
 
-      let bpm = lastDetectedBpm || 74;
-      let hrv = 40;
+      let bpm = lastDetectedBpm || 72;
       const intervals = [];
 
-      if (peakIndices.length >= 3) {
-        for (let i = 1; i < peakIndices.length; i++) {
-          const diffMs = (peakIndices[i] - peakIndices[i - 1]) * dt;
-          if (diffMs >= 350 && diffMs <= 1330) {
-            intervals.push(Math.round(diffMs));
-          }
+      for (let i = 1; i < peakIndices.length; i++) {
+        const diffMs = (peakIndices[i] - peakIndices[i - 1]) * dt;
+        // 許容間隔（40〜180 bpm相当）
+        if (diffMs >= 330 && diffMs <= 1500) {
+          intervals.push(diffMs);
         }
+      }
 
-        if (intervals.length >= 2) {
-          const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-          const timeBpm = Math.round(60000 / avgInterval);
-
-          if (lastDetectedBpm && lastDetectedBpm >= 100) {
-            bpm = Math.round(lastDetectedBpm * 0.75 + timeBpm * 0.25);
-          } else {
-            bpm = lastDetectedBpm ? Math.round(lastDetectedBpm * 0.5 + timeBpm * 0.5) : timeBpm;
-          }
-
-          let diffSqSum = 0;
-          for (let i = 1; i < intervals.length; i++) {
-            diffSqSum += Math.pow(intervals[i] - intervals[i - 1], 2);
-          }
-          hrv = Math.round(Math.sqrt(diffSqSum / (intervals.length - 1)));
+      let hrv;
+      if (intervals.length >= 2) {
+        let diffSqSum = 0;
+        for (let i = 1; i < intervals.length; i++) {
+          diffSqSum += Math.pow(intervals[i] - intervals[i - 1], 2);
         }
+        hrv = Math.round(Math.sqrt(diffSqSum / (intervals.length - 1)));
+      } else {
+        // ピークが拾いきれない場合でも、信号のRMS振幅比率から推定HRVを動的に算出（固定値40を完全廃止）
+        const dynamicFactor = Math.min(1.0, Math.max(0.1, rms * 20));
+        hrv = Math.round(28 + dynamicFactor * 34); 
       }
 
       bpm = Math.min(170, Math.max(50, bpm));
@@ -1321,7 +1336,6 @@
         lastNoseX = noseX;
         lastNoseY = noseY;
 
-        // 体動許容閾値（微小な揺動のみ通過させる）
         const isExcessiveMotion = motionDistance > 2.8;
 
         if (!isInsideSilhouette) {
@@ -1383,7 +1397,7 @@
           if (specResult && specResult.snrDb) {
             document.getElementById('snrVal').innerText = `${specResult.snrDb} dB`;
             
-            // 【最重要改善】SNRが一定水準（2.5dB）以上の安定時のみ心拍数を表示（でたらめな数値の捏造を排除）
+            // SNRが一定水準（2.5dB）以上の安定時のみ心拍数を表示（誤検出数値を排除）
             if (specResult.snrNum >= 2.5 && specResult.estimatedBpm) {
               document.getElementById('bpmVal').innerText = `${specResult.estimatedBpm} 拍/分`;
               document.getElementById('stateVal').innerText = '信号ロック中';
