@@ -92,7 +92,7 @@
       overflow: hidden;
       background: #020617;
       border: 2px solid #1e293b;
-      transition: border-color 0.8s ease, box-shadow 0.8s ease;
+      transition: border-color 0.4s ease, box-shadow 0.4s ease;
     }
     video {
       position: absolute;
@@ -129,7 +129,7 @@
       stroke-width: 1.8;
       stroke-dasharray: 6 4;
       pointer-events: none;
-      transition: stroke 0.4s ease;
+      transition: stroke 0.3s ease;
     }
     .guide-hint {
       position: absolute;
@@ -141,6 +141,7 @@
       border-radius: 6px;
       border: 1px solid rgba(56, 189, 248, 0.3);
       pointer-events: none;
+      transition: all 0.2s ease;
     }
 
     .pulse-indicator {
@@ -597,7 +598,7 @@
     <div class="progress-bar" id="progressBar"></div>
   </div>
 
-  <!-- 512点ゼロパディング振幅スペクトル（文字被り解消版） -->
+  <!-- 512点ゼロパディング振幅スペクトル -->
   <div class="spectrum-panel">
     <div class="spectrum-title">rPPG AMPLITUDE SPECTRUM (0 - 3.0 Hz)</div>
     <canvas id="spectrumCanvas"></canvas>
@@ -684,10 +685,10 @@
     let isCameraReady = false;
     let isScanning = false;
     let isWarmingUp = false;
-    let scanStartTime = null;
     
     let currentModeSeconds = 10;
-    let scanDurationMs = 10000;
+    let targetValidFrames = 300; // 10秒=300フレーム, 60秒=1800フレーム
+    let accumulatedValidFrames = 0;
 
     const rawSignals = [];
     const timestamps = [];
@@ -696,6 +697,10 @@
 
     let bp_x1 = 0, bp_x2 = 0, bp_y1 = 0, bp_y2 = 0;
     let lastDetectedBpm = null;
+
+    // モーションゲート監視用変数（鼻尖の座標追従）
+    let lastNoseX = null;
+    let lastNoseY = null;
 
     function getStoredHistory() {
       try {
@@ -739,12 +744,7 @@
       let recentTrend = '直近は安定傾向';
       if (recentStressCount >= 2) recentTrend = '直近で交感神経の緊張傾向が連続';
 
-      return {
-        count: history.length,
-        avgBpm,
-        avgHrv,
-        recentTrend
-      };
+      return { count: history.length, avgBpm, avgHrv, recentTrend };
     }
 
     function updateHistoryUI() {
@@ -768,21 +768,19 @@
       baseAvgHrv.innerText = Math.round(totalHrv / history.length);
       baseCountText.innerText = `累計計測: ${history.length}回`;
 
-      listEl.innerHTML = history.slice(0, 10).map(h => {
-        return `
-          <div class="history-row">
-            <span>${h.date.split(' ')[0]} ${h.date.split(' ')[1]} (${h.mode}s)</span>
-            <span>BPM: <b>${h.bpm}</b> / HRV: <b>${h.hrv}ms</b> / SNR: <b>${h.snr}dB</b></span>
-            <span style="color:#38bdf8; font-weight:700;">${h.stateLabel}</span>
-          </div>
-        `;
-      }).join('');
+      listEl.innerHTML = history.slice(0, 10).map(h => `
+        <div class="history-row">
+          <span>${h.date.split(' ')[0]} ${h.date.split(' ')[1]} (${h.mode}s)</span>
+          <span>BPM: <b>${h.bpm}</b> / HRV: <b>${h.hrv}ms</b> / SNR: <b>${h.snr}dB</b></span>
+          <span style="color:#38bdf8; font-weight:700;">${h.stateLabel}</span>
+        </div>
+      `).join('');
     }
 
     function setMeasureMode(sec) {
       if (isScanning) return;
       currentModeSeconds = sec;
-      scanDurationMs = sec * 1000;
+      targetValidFrames = sec * 30;
 
       document.getElementById('mode10').classList.toggle('active', sec === 10);
       document.getElementById('mode60').classList.toggle('active', sec === 60);
@@ -907,7 +905,7 @@
       outCtx.restore();
     }
 
-    // 0.8Hz - 2.8Hz (48 - 168 bpm) 帯域を通過させる広帯域バターワースIIRフィルタ
+    // 0.8Hz - 2.8Hz (48 - 168 bpm) 広帯域バターワースIIRフィルタ
     function applyBandpassFilter(input) {
       const b0 = 0.0825, b1 = 0, b2 = -0.0825;
       const a1 = -1.1856, a2 = 0.3845;
@@ -986,7 +984,7 @@
       }
     }
 
-    /* === 呼吸低周波ノイズ抑制・適応的スペクトル解析（48〜168 bpm） === */
+    /* === モーションゲート通過済みクリーンデータ専用の振幅スペクトル解析 === */
     function drawAmplitudeSpectrum(signals, times) {
       if (signals.length < 24) return { snrDb: "0.0", peakFreq: 0, estimatedBpm: 72 };
 
@@ -1026,13 +1024,10 @@
         const freq = i * freqStep;
 
         if (freq >= 0.85 && freq <= 2.80) {
-          // 【最重要改善】運動直後の荒い呼吸（0.85〜1.0Hz付近＝51〜60bpm）の過剰な振幅を抑制する周波数重み付け
           let weight = 1.0;
           if (freq < 1.05) {
-            // 63bpm未満の低周波は息切れノイズの影響が大きいためペナルティ減衰
             weight = 0.45 + (freq - 0.85) * 2.75;
           } else if (freq >= 1.70) {
-            // 102bpm以上の高心拍帯域は生体減衰を補正して適正評価
             weight = 1.25;
           }
 
@@ -1096,7 +1091,6 @@
       }
       specCtx.stroke();
 
-      // 呼吸帯域（0.4Hz）マーカー
       const respX = padL + (0.4 / 3.0) * plotW;
       specCtx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
       specCtx.setLineDash([4, 2, 1, 2]);
@@ -1107,7 +1101,6 @@
       specCtx.fillStyle = '#94a3b8';
       specCtx.fillText('Resp 0.4Hz', respX, padT + 8);
 
-      // 心拍数マーカー（運動後の高心拍に追従）
       if (detectedFreq >= 0.85) {
         const hrX = padL + (detectedFreq / 3.0) * plotW;
         specCtx.strokeStyle = '#f43f5e';
@@ -1124,7 +1117,6 @@
       return { snrDb: snrVal, peakFreq: detectedFreq, estimatedBpm };
     }
 
-    /* === 適応的閾値型 生体ピーク検出（120bpm以上のピーク飛ばしを根絶） === */
     function analyzeBiometrics() {
       const minPoints = currentModeSeconds === 10 ? 40 : 200;
       if (rawSignals.length < minPoints) return { bpm: 72, hrv: 45, intervals: [800, 810] };
@@ -1144,7 +1136,6 @@
         sumSq += val * val;
       }
 
-      // 【重要改善】信号のRMS振幅に応じた適応的閾値（振幅が微小な高心拍も確実に検出）
       const rms = Math.sqrt(sumSq / detrended.length);
       const adaptiveThreshold = Math.max(0.008, rms * 0.45);
 
@@ -1166,7 +1157,6 @@
       if (peakIndices.length >= 3) {
         for (let i = 1; i < peakIndices.length; i++) {
           const diffMs = (peakIndices[i] - peakIndices[i - 1]) * dt;
-          // 45〜170 bpm 相当（350ms〜1330ms）まで許容
           if (diffMs >= 350 && diffMs <= 1330) {
             intervals.push(Math.round(diffMs));
           }
@@ -1176,7 +1166,6 @@
           const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
           const timeBpm = Math.round(60000 / avgInterval);
 
-          // FFTピーク周波数が運動域（100bpm以上）を示している場合はFFT側をより信頼
           if (lastDetectedBpm && lastDetectedBpm >= 100) {
             bpm = Math.round(lastDetectedBpm * 0.75 + timeBpm * 0.25);
           } else {
@@ -1283,6 +1272,9 @@
       rgbBuffer.g.length = 0;
       rgbBuffer.b.length = 0;
       lastDetectedBpm = null;
+      accumulatedValidFrames = 0;
+      lastNoseX = null;
+      lastNoseY = null;
     }
 
     const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
@@ -1302,11 +1294,34 @@
         const multiRoi = extractMultiRoiBounding(lm);
         const rawVal = extractSkinChromSignal(multiRoi);
 
-        document.getElementById('silhouetteSvg').style.stroke = '#10b981';
-        
-        if (!isScanning) {
-          document.getElementById('guideHint').innerText = '顔を検出中：位置を調整し「計測開始」を押してください';
-          document.getElementById('measureBtn').disabled = false;
+        // 鼻尖（ランドマーク1）のピクセル座標
+        const noseX = lm[1].x * outputCanvas.width;
+        const noseY = lm[1].y * outputCanvas.height;
+
+        let motionDistance = 0;
+        if (lastNoseX !== null && lastNoseY !== null) {
+          const dx = noseX - lastNoseX;
+          const dy = noseY - lastNoseY;
+          motionDistance = Math.sqrt(dx * dx + dy * dy);
+        }
+        lastNoseX = noseX;
+        lastNoseY = noseY;
+
+        // 【モーションゲート判定】フレーム間の鼻尖移動量が3.2pxを超えたら過大体動と判定
+        const isExcessiveMotion = motionDistance > 3.2;
+
+        if (isExcessiveMotion) {
+          document.getElementById('silhouetteSvg').style.stroke = '#f43f5e';
+          if (isScanning) {
+            document.getElementById('guideHint').innerText = '体動検知：頭の揺れを抑えて静止してください';
+            document.getElementById('stateVal').innerText = '待機中';
+          }
+        } else {
+          document.getElementById('silhouetteSvg').style.stroke = '#10b981';
+          if (!isScanning) {
+            document.getElementById('guideHint').innerText = '顔を検出中：位置を調整し「計測開始」を押してください';
+            document.getElementById('measureBtn').disabled = false;
+          }
         }
 
         if (rawVal !== null && isScanning) {
@@ -1318,16 +1333,26 @@
           }
 
           const filtered = applyBandpassFilter(rawVal);
-          const elapsed = now - scanStartTime;
 
-          if (elapsed < 800) {
+          // 助走期間（0.8秒）の過渡応答吸収
+          if (isWarmingUp) {
+            accumulatedValidFrames++;
+            if (accumulatedValidFrames > 25) {
+              isWarmingUp = false;
+              accumulatedValidFrames = 0;
+              document.getElementById('stateVal').innerText = '解析中';
+              document.getElementById('guideHint').innerText = '計測中：画面を自然に見つめてください';
+            }
             return;
-          } else if (isWarmingUp) {
-            isWarmingUp = false;
-            document.getElementById('stateVal').innerText = '解析中';
-            document.getElementById('guideHint').innerText = '計測中：そのまま動かずに静止してください';
           }
 
+          // 【モーションゲート発動】過大体動のフレームは蓄積せず破棄（プログレスバーも進めない）
+          if (isExcessiveMotion) {
+            return;
+          }
+
+          // 安定フレームのみを厳選して蓄積
+          accumulatedValidFrames++;
           rawSignals.push(filtered);
           timestamps.push(now);
 
@@ -1340,11 +1365,15 @@
             }
           }
 
-          const activeElapsed = elapsed - 800;
-          const pct = Math.min(100, Math.round((activeElapsed / scanDurationMs) * 100));
+          document.getElementById('stateVal').innerText = '解析中';
+          document.getElementById('guideHint').innerText = 'クリーン信号を取得中：安定しています';
+
+          const pct = Math.min(100, Math.round((accumulatedValidFrames / targetValidFrames) * 100));
           document.getElementById('progressBar').style.width = pct + '%';
 
-          if (activeElapsed >= scanDurationMs) completeScanSession();
+          if (accumulatedValidFrames >= targetValidFrames) {
+            completeScanSession();
+          }
         }
       } else {
         document.getElementById('silhouetteSvg').style.stroke = 'rgba(56, 189, 248, 0.45)';
@@ -1411,9 +1440,9 @@
 
       rawSignals.length = 0;
       timestamps.length = 0;
+      accumulatedValidFrames = 0;
 
       isWarmingUp = true;
-      scanStartTime = performance.now();
       isScanning = true;
     }
 
@@ -1455,16 +1484,16 @@
             '生体フィードバック触覚振動を実行'
           ],
           stateLabel: theme === 'amber' ? '交感神経過緊張' : (theme === 'cyan' ? '覚醒水準減退' : '自律神経至適共鳴'),
-          stateNote: theme === 'amber' ? '運動後または過積載による心拍上昇状態' : (theme === 'cyan' ? '中枢性疲労による強い眠気' : '高い集中力を維持したゾーン状態'),
-          equivLabel: theme === 'amber' ? '激しい運動直後または緊急対応相当' : (theme === 'cyan' ? '長時間の単調作業による弛緩相当' : '深い没入作業相当'),
+          stateNote: theme === 'amber' ? '活動水準上昇または過積載による心拍上昇状態' : (theme === 'cyan' ? '中枢性疲労による強い眠気' : '高い集中力を維持したゾーン状態'),
+          equivLabel: theme === 'amber' ? '活動直後または緊迫した対応相当' : (theme === 'cyan' ? '長時間の単調作業による弛緩相当' : '深い没入作業相当'),
           clinicalParams: {
             svr: theme === 'amber' ? '上昇傾向（末梢血管収縮）' : (theme === 'cyan' ? '低下傾向（末梢弛緩）' : '標準域（灌流安定）'),
             coherence: theme === 'amber' ? '低（不整変動）' : (theme === 'cyan' ? '中（徐波優位）' : '高（同調状態）'),
             snrAssessment: `${currentSnr} dB（信号品質指標: 良好）`
           },
-          vitalTrend: `心拍数${m.bpm}bpm、HRV${m.hrv}msを記録。身体活動と自律神経負荷に直接連動した生体推移を捉えています。`,
-          discrepancy: `実測心拍数${m.bpm}bpmに対しHRVが${m.hrv}msを記録。心血管系シグナルに顕著な交感神経ドライブが検出されています。`,
-          discrepancyNote: '高負荷な身体状態に即した自律神経シグナルを検出しました。',
+          vitalTrend: `心拍数${m.bpm}bpm、HRV${m.hrv}msを記録。モーションゲートにより体動ノイズを除去した実測推移を捉えています。`,
+          discrepancy: `実測心拍数${m.bpm}bpmに対しHRVが${m.hrv}msを記録。クリーンデータから抽出された生理学的状態が反映されています。`,
+          discrepancyNote: 'モーションゲート処理により安定した生体信号を検出しました。',
           focusLimitMins: theme === 'amber' ? 10 : (theme === 'cyan' ? 8 : 35),
           timeline: theme === 'amber' ? [
             `開始5分後：心拍昂進に伴う呼吸促迫とタイピング入力の誤タッチ`,
@@ -1481,7 +1510,7 @@
           ]),
           prescription: theme === 'amber' ? {
             title: '呼吸性不整脈を活用した迷走神経刺激呼吸',
-            reason: `心拍数${m.bpm}bpmと交感神経が極度に優位であるため、呼気延長による副交感神経刺激が必須です。`,
+            reason: `心拍数${m.bpm}bpmと交感神経が優位であるため、呼気延長による副交感神経刺激が有効です。`,
             actionSteps: [
               '背もたれに深く体重を預け、息を4秒吸って8秒かけて完全に吐き切る',
               '冷たい水で口をゆすぐ、または手のひらを物理的に冷却する'
@@ -1575,7 +1604,7 @@
             <div class="clinical-param-item">血管抵抗性(SVR): <b>${clin.svr}</b></div>
             <div class="clinical-param-item">自律神経同調度: <b>${clin.coherence}</b></div>
             <div class="clinical-param-item">スペクトルSNR: <b>${clin.snrAssessment}</b></div>
-            <div class="clinical-param-item">基準比較: <b>cPPG追従域</b></div>
+            <div class="clinical-param-item">適応制御: <b>モーションゲート稼働中</b></div>
           </div>
         </div>
 
@@ -1612,7 +1641,7 @@
           <span>【学術基準およびガイドライン参照】</span>
           ・rPPG臨床トランスレーション基準：Elgendi et al. (2026) "Roadmap of remote photoplethysmography from heart rate measurement toward clinical translation" npj Digital Medicine準拠<br>
           ・心拍変動解析基準（HRV/RMSSD）：Task Force of the ESC/NASPE (1996) 準拠<br>
-          ・作業時間・眼精疲労予測：厚生労働省「情報機器作業における労働衛生管理のためのガイドライン」準拠<br>
+          ・適応型モーションゲーティング：顔面変位ベクトル解析によるアーティファクト除去準拠<br>
           ・スペクトル解析・呼吸周波数同調：渡辺ら (2017) 電気関係学会東北支部連合大会準拠
         </div>
       `;
