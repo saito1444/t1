@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>非接触生体信号解析自律診断システム</title>
+  <title>AI表情筋アタック - 喜怒哀楽スコアバトル</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
@@ -13,32 +13,28 @@
     body {
       margin: 0;
       padding: 14px;
-      background: #06080e;
+      background: #090d16;
       color: #f1f5f9;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
       display: flex;
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
-      transition: background 0.8s ease;
+      user-select: none;
     }
-
-    body.theme-amber { background: #261304 !important; }
-    body.theme-cyan { background: #031b29 !important; }
-    body.theme-emerald { background: #032415 !important; }
 
     .header {
       width: 100%;
-      max-width: 380px;
+      max-width: 420px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 8px;
       border-bottom: 1px solid #1e293b;
-      padding-bottom: 8px;
+      padding-bottom: 6px;
     }
     .header h1 {
-      font-size: 13px;
+      font-size: 14px;
       margin: 0;
       letter-spacing: 0.05em;
       color: #38bdf8;
@@ -53,46 +49,17 @@
       border-radius: 4px;
     }
 
-    .mode-selector {
-      width: 100%;
-      max-width: 380px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-      margin-bottom: 8px;
-      position: relative;
-      z-index: 20;
-    }
-    .mode-tab {
-      background: #0f172a;
-      border: 1px solid #1e293b;
-      color: #94a3b8;
-      padding: 10px 4px;
-      border-radius: 6px;
-      font-size: 11px;
-      text-align: center;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.15s ease;
-    }
-    .mode-tab:active { transform: scale(0.97); }
-    .mode-tab.active {
-      background: rgba(56, 189, 248, 0.15);
-      border-color: #38bdf8;
-      color: #38bdf8;
-      font-weight: 700;
-    }
-
-    .scanner-box {
+    /* ゲームステージ表示 */
+    .game-box {
       position: relative;
       width: 100%;
-      max-width: 380px;
-      height: 250px;
+      max-width: 420px;
+      height: 280px;
       border-radius: 12px;
       overflow: hidden;
       background: #020617;
-      border: 2px solid #1e293b;
-      transition: border-color 0.4s ease, box-shadow 0.4s ease;
+      border: 2px solid #334155;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     }
     video {
       position: absolute;
@@ -100,7 +67,6 @@
       height: 100%;
       object-fit: cover;
       transform: scaleX(-1);
-      pointer-events: none;
       opacity: 0;
     }
     #outputCanvas {
@@ -108,1595 +74,699 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      pointer-events: none;
     }
 
-    .silhouette-overlay {
+    /* オーバーレイUI */
+    .overlay-ui {
       position: absolute;
       top: 0; left: 0; width: 100%; height: 100%;
-      pointer-events: none !important;
-      z-index: 5;
+      pointer-events: none;
       display: flex;
       flex-direction: column;
+      justify-content: space-between;
+      padding: 10px;
+    }
+    .overlay-top {
+      display: flex;
+      justify-content: space-between;
       align-items: center;
-      justify-content: center;
     }
-    .silhouette-svg {
-      width: 240px;
-      height: 235px;
-      fill: none;
-      stroke: rgba(56, 189, 248, 0.45);
-      stroke-width: 1.8;
-      stroke-dasharray: 6 4;
-      pointer-events: none;
-      transition: stroke 0.3s ease;
+    .timer-badge {
+      font-size: 20px;
+      font-family: monospace;
+      font-weight: 900;
+      color: #f59e0b;
+      background: rgba(2, 6, 23, 0.85);
+      border: 1.5px solid #f59e0b;
+      padding: 2px 10px;
+      border-radius: 8px;
     }
-    .guide-hint {
-      position: absolute;
-      bottom: 8px;
-      font-size: 10px;
+    .live-score-badge {
+      font-size: 18px;
+      font-family: monospace;
+      font-weight: 900;
       color: #38bdf8;
-      background: rgba(2, 6, 23, 0.88);
-      padding: 4px 10px;
-      border-radius: 6px;
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      pointer-events: none;
-      transition: all 0.2s ease;
-      text-align: center;
-      max-width: 90%;
+      background: rgba(2, 6, 23, 0.85);
+      border: 1.5px solid #38bdf8;
+      padding: 2px 10px;
+      border-radius: 8px;
     }
 
-    .pulse-indicator {
-      position: absolute;
-      top: 8px;
-      left: 8px;
-      font-size: 9px;
-      color: #38bdf8;
-      background: rgba(2, 6, 23, 0.9);
-      padding: 3px 6px;
-      border-radius: 4px;
-      border: 1px solid rgba(56, 189, 248, 0.4);
-      z-index: 7;
-      pointer-events: none;
-      display: none;
-      font-weight: 700;
-    }
-
-    .scan-line {
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 2px;
-      background: linear-gradient(90deg, transparent, #38bdf8, transparent);
-      box-shadow: 0 0 10px #38bdf8;
-      animation: scan 2.5s infinite linear;
-      z-index: 6;
-      pointer-events: none;
-      display: none;
-    }
-    @keyframes scan {
-      0% { top: 0%; opacity: 0; }
-      15% { opacity: 1; }
-      85% { opacity: 1; }
-      100% { top: 100%; opacity: 0; }
-    }
-
-    .progress-bar-container {
+    .match-gauge-container {
       width: 100%;
-      max-width: 380px;
-      height: 4px;
-      background: #1e293b;
-      margin-top: 6px;
-      border-radius: 2px;
-      overflow: hidden;
-      display: none;
-      pointer-events: none;
+      background: rgba(15, 23, 42, 0.8);
+      border-radius: 8px;
+      padding: 6px 10px;
+      border: 1px solid #334155;
     }
-    .progress-bar {
+    .match-gauge-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+    .gauge-bar-bg {
+      width: 100%;
+      height: 12px;
+      background: #1e293b;
+      border-radius: 6px;
+      overflow: hidden;
+      position: relative;
+    }
+    .gauge-bar-fill {
       width: 0%;
       height: 100%;
-      background: #38bdf8;
-      transition: width 0.15s linear;
+      background: linear-gradient(90deg, #0284c7, #38bdf8, #10b981);
+      transition: width 0.08s ease-out;
     }
 
-    .spectrum-panel {
-      width: 100%;
-      max-width: 380px;
-      height: 125px;
-      background: #02050c;
-      border: 1px solid #1e293b;
-      border-radius: 8px;
-      margin-top: 8px;
-      position: relative;
-      pointer-events: none;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-end;
-    }
-    #spectrumCanvas {
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
-    .spectrum-title {
+    .status-banner {
       position: absolute;
-      top: 4px;
-      left: 8px;
-      font-size: 8px;
-      color: #64748b;
-      font-family: monospace;
-      letter-spacing: 0.05em;
-    }
-
-    .metrics-grid {
-      width: 100%;
-      max-width: 380px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-      margin-top: 8px;
-    }
-    .metric-card {
-      background: rgba(15, 20, 31, 0.85);
-      border: 1px solid #1e293b;
-      border-radius: 8px;
-      padding: 8px 10px;
-    }
-    .metric-card span { font-size: 9px; color: #94a3b8; display: block; margin-bottom: 2px; }
-    .metric-card strong { font-size: 14px; color: #f1f5f9; font-family: monospace; display: block; }
-    .val-accent { color: #38bdf8; }
-
-    .metric-note {
-      font-size: 8.5px;
-      color: #38bdf8;
-      background: rgba(56, 189, 248, 0.1);
-      border-left: 2px solid #38bdf8;
-      padding: 2px 4px;
-      margin-top: 4px;
-      border-radius: 0 4px 4px 0;
-      line-height: 1.3;
-    }
-
-    .baseline-card {
-      width: 100%;
-      max-width: 380px;
-      background: rgba(15, 23, 42, 0.7);
-      border: 1px solid #334155;
-      border-radius: 8px;
-      padding: 8px 10px;
-      margin-top: 8px;
-      font-size: 10px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .baseline-item b { color: #38bdf8; }
-
-    .recorded-log-card {
-      width: 100%;
-      max-width: 380px;
-      background: rgba(16, 185, 129, 0.12);
-      border: 1.5px solid #10b981;
-      border-radius: 8px;
-      padding: 10px 12px;
-      margin-top: 8px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 22px;
+      font-weight: 900;
+      color: #ffffff;
+      text-shadow: 0 0 16px rgba(0,0,0,0.9);
+      background: rgba(2, 6, 23, 0.88);
+      border: 2px solid #38bdf8;
+      padding: 8px 18px;
+      border-radius: 10px;
+      text-align: center;
       display: none;
-    }
-    .recorded-log-header {
-      font-size: 11px;
-      font-weight: 700;
-      color: #10b981;
-      display: flex;
-      justify-content: space-between;
-      border-bottom: 1px solid rgba(16, 185, 129, 0.3);
-      padding-bottom: 4px;
-      margin-bottom: 6px;
-    }
-    .recorded-log-body {
-      font-size: 10.5px;
-      line-height: 1.6;
-      color: #f1f5f9;
+      pointer-events: none;
     }
 
-    .btn-group {
+    /* ステップナビゲーション */
+    .controls-panel {
       width: 100%;
-      max-width: 380px;
+      max-width: 420px;
+      margin-top: 8px;
       display: flex;
       flex-direction: column;
       gap: 8px;
-      margin-top: 10px;
     }
 
-    .btn-action {
+    .category-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+    .btn-cat {
+      background: #0f172a;
+      border: 1.5px solid #1e293b;
+      color: #94a3b8;
+      padding: 10px 4px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+      transition: all 0.15s ease;
+    }
+    .btn-cat.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: #38bdf8;
+      color: #38bdf8;
+    }
+
+    .btn-main {
       width: 100%;
       padding: 13px;
       border-radius: 8px;
       border: none;
-      font-size: 13px;
-      font-weight: 700;
+      font-size: 14px;
+      font-weight: 800;
       cursor: pointer;
-      position: relative;
-      z-index: 100;
-      touch-action: manipulation;
       user-select: none;
-      transition: all 0.2s ease;
+      transition: transform 0.1s ease, filter 0.1s ease;
     }
-    .btn-camera {
-      background: #1e293b;
-      color: #38bdf8;
-      border: 1px solid #38bdf8;
-    }
-    .btn-camera:active { transform: scale(0.98); background: rgba(56, 189, 248, 0.1); }
-    .btn-measure {
+    .btn-main:active { transform: scale(0.98); }
+    .btn-start {
       background: linear-gradient(135deg, #0284c7, #2563eb);
       color: #ffffff;
-      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
     }
-    .btn-measure:active { transform: scale(0.98); filter: brightness(1.15); }
-    .btn-measure:disabled, .btn-camera:disabled {
+    .btn-main:disabled {
       background: #1e293b !important;
       color: #64748b !important;
-      border-color: #334155 !important;
-      box-shadow: none !important;
       cursor: not-allowed;
-      transform: none !important;
+      box-shadow: none !important;
     }
 
-    .agent-action-card {
+    /* 結果モーダル */
+    .result-card {
       width: 100%;
-      max-width: 380px;
-      background: rgba(2, 6, 23, 0.9);
-      border-radius: 10px;
-      padding: 12px;
-      margin-top: 8px;
-      display: none;
+      max-width: 420px;
+      background: #0f172a;
       border: 2px solid #38bdf8;
-    }
-    .agent-action-header {
-      font-size: 11px;
-      font-weight: 700;
-      color: #38bdf8;
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 6px;
-      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
-      padding-bottom: 4px;
-    }
-    .agent-action-list {
-      font-size: 11px;
-      color: #f8fafc;
-      line-height: 1.5;
-    }
-
-    .report-card {
-      width: 100%;
-      max-width: 380px;
-      background: rgba(15, 20, 31, 0.9);
-      border: 1px solid #334155;
-      border-radius: 10px;
-      padding: 12px;
+      border-radius: 12px;
+      padding: 14px;
       margin-top: 8px;
       display: none;
+      box-shadow: 0 4px 20px rgba(56, 189, 248, 0.2);
     }
-    .report-title {
-      font-size: 11px;
-      font-weight: 700;
+    .result-title {
+      font-size: 16px;
+      font-weight: 900;
       color: #38bdf8;
+      text-align: center;
       margin-bottom: 8px;
-      display: flex;
-      justify-content: space-between;
-      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
-      padding-bottom: 4px;
     }
-    .report-section {
+    .result-score-box {
+      background: #020617;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
       margin-bottom: 10px;
-      font-size: 11px;
-      line-height: 1.6;
     }
-    .report-section strong {
-      color: #38bdf8;
-      display: block;
-      margin-bottom: 2px;
+    .score-big {
+      font-size: 32px;
+      font-family: monospace;
+      font-weight: 900;
+      color: #10b981;
     }
-    .section-note {
-      display: inline-block;
-      font-size: 10px;
-      color: #f59e0b;
-      background: rgba(245, 158, 11, 0.1);
-      padding: 2px 6px;
-      border-radius: 4px;
-      margin-top: 4px;
-      border: 1px solid rgba(245, 158, 11, 0.3);
-    }
-
-    .vital-trend-box {
-      background: rgba(56, 189, 248, 0.08);
-      border-left: 2px solid #38bdf8;
-      padding: 6px 10px;
-      margin-top: 4px;
-      border-radius: 0 6px 6px 0;
-      color: #cbd5e1;
-    }
-
-    .clinical-param-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+    .name-input-row {
+      display: flex;
       gap: 6px;
-      background: rgba(2, 6, 23, 0.7);
-      padding: 6px;
-      border-radius: 6px;
-      margin-top: 4px;
       margin-bottom: 8px;
     }
-    .clinical-param-item {
-      font-size: 10px;
-      color: #cbd5e1;
-    }
-    .clinical-param-item b {
-      color: #38bdf8;
-    }
-
-    .timeline-box {
-      background: rgba(2, 6, 23, 0.7);
-      border-left: 2px solid #38bdf8;
-      padding: 6px 10px;
-      margin-top: 4px;
-      border-radius: 0 6px 6px 0;
-    }
-    .timeline-item {
-      margin-bottom: 4px;
-      color: #cbd5e1;
-    }
-    .timeline-item:last-child { margin-bottom: 0; }
-
-    .prescription-box {
-      background: rgba(16, 185, 129, 0.08);
-      border: 1px solid #10b981;
-      border-radius: 8px;
-      padding: 10px;
-      margin-top: 6px;
-    }
-    .prescription-title {
+    .name-input {
+      flex: 1;
+      background: #020617;
+      border: 1px solid #334155;
+      color: #fff;
+      padding: 8px;
+      border-radius: 6px;
       font-size: 12px;
+    }
+    .btn-register {
+      background: #10b981;
+      color: #fff;
+      border: none;
+      padding: 0 14px;
+      border-radius: 6px;
       font-weight: 700;
-      color: #10b981;
-      margin-bottom: 4px;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .prescription-reason {
-      font-size: 10px;
-      color: #cbd5e1;
-      margin-bottom: 6px;
-      line-height: 1.4;
-    }
-    .prescription-steps {
-      font-size: 10.5px;
-      color: #f8fafc;
-      line-height: 1.5;
-      padding-left: 14px;
-      margin: 0;
-    }
-    .prescription-avoid {
-      font-size: 9.5px;
-      color: #f43f5e;
-      margin-top: 6px;
-      border-top: 1px dashed rgba(244, 63, 94, 0.3);
-      padding-top: 4px;
+      font-size: 12px;
+      cursor: pointer;
     }
 
-    .reference-box {
-      margin-top: 10px;
-      padding-top: 8px;
-      border-top: 1px dashed #334155;
-      font-size: 9px;
-      color: #64748b;
-      line-height: 1.4;
-    }
-    .reference-box span {
-      display: block;
-      color: #94a3b8;
-      font-weight: 700;
-      margin-bottom: 2px;
-    }
-
-    .history-card {
+    /* ランキングボード */
+    .ranking-card {
       width: 100%;
-      max-width: 380px;
-      background: rgba(15, 20, 31, 0.7);
+      max-width: 420px;
+      background: rgba(15, 23, 42, 0.7);
       border: 1px solid #1e293b;
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 10px;
       margin-top: 10px;
     }
-    .history-header {
+    .ranking-header {
       font-size: 11px;
       font-weight: 700;
       color: #94a3b8;
       display: flex;
       justify-content: space-between;
-      margin-bottom: 6px;
       border-bottom: 1px solid #1e293b;
       padding-bottom: 4px;
+      margin-bottom: 6px;
     }
-    .history-list {
-      max-height: 140px;
-      overflow-y: auto;
-      font-size: 10px;
-      color: #cbd5e1;
+    .ranking-list {
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
     }
-    .history-row {
+    .ranking-row {
       display: flex;
       justify-content: space-between;
-      padding: 5px 0;
-      border-bottom: 1px dashed #1e293b;
+      background: rgba(2, 6, 23, 0.6);
+      padding: 5px 8px;
+      border-radius: 4px;
     }
-    .history-row:last-child { border-bottom: none; }
-
-    .btn-reset {
-      display: none;
-      width: 100%;
-      max-width: 380px;
-      padding: 12px;
-      border-radius: 8px;
-      border: 1px solid #334155;
-      background: rgba(30, 41, 59, 0.85);
-      color: #94a3b8;
-      font-size: 12px;
-      cursor: pointer;
-      margin-top: 8px;
-      position: relative;
-      z-index: 100;
-      touch-action: manipulation;
-    }
-    .btn-reset:active { transform: scale(0.98); }
-
-    .btn-clear-history {
-      background: none;
-      border: none;
-      color: #64748b;
-      font-size: 9px;
-      cursor: pointer;
-      text-decoration: underline;
-      padding: 0;
-    }
+    .rank-top1 { border-left: 3px solid #f59e0b; color: #f59e0b; font-weight: 700; }
+    .rank-top2 { border-left: 3px solid #94a3b8; color: #cbd5e1; }
+    .rank-top3 { border-left: 3px solid #b45309; color: #d97706; }
   </style>
 </head>
 <body>
 
   <div class="header">
-    <h1>非接触生体解析自律診断</h1>
-    <div class="badge" id="currentModeBadge">10秒 クイック</div>
+    <h1>AI表情筋アタック (EMOTION MASTER)</h1>
+    <div class="badge" id="cameraStatusBadge">カメラ未起動</div>
   </div>
 
-  <div class="mode-selector">
-    <div class="mode-tab active" id="mode10" onclick="setMeasureMode(10)">
-      <strong>10秒 体験モード</strong><br>
-      <span style="font-size:9px;">展示向け・簡易判定</span>
-    </div>
-    <div class="mode-tab" id="mode60" onclick="setMeasureMode(60)">
-      <strong>60秒 学術精度モード</strong><br>
-      <span style="font-size:9px;">Task Force基準準拠</span>
-    </div>
-  </div>
-
-  <div class="scanner-box" id="scannerBox">
+  <div class="game-box">
     <video id="inputVideo" playsinline autoplay muted></video>
     <canvas id="outputCanvas"></canvas>
-    
-    <div class="pulse-indicator" id="pulseIndicator">血流脈動 リアルタイム可視化中</div>
 
-    <div class="silhouette-overlay">
-      <svg class="silhouette-svg" id="silhouetteSvg" viewBox="0 0 120 125">
-        <ellipse cx="60" cy="42" rx="34" ry="32" />
-        <path d="M 38 72 C 34 82 16 88 0 102 L 0 125 L 120 125 L 120 102 C 104 88 86 82 82 72" />
-      </svg>
-      <div class="guide-hint" id="guideHint">1. 先に「カメラを起動」を押してください</div>
-    </div>
+    <div class="status-banner" id="statusBanner">真顔をスキャン中...</div>
 
-    <div class="scan-line" id="scanLine"></div>
-  </div>
-
-  <div class="progress-bar-container" id="progressContainer">
-    <div class="progress-bar" id="progressBar"></div>
-  </div>
-
-  <div class="spectrum-panel">
-    <div class="spectrum-title">rPPG AMPLITUDE SPECTRUM (0 - 3.0 Hz)</div>
-    <canvas id="spectrumCanvas"></canvas>
-  </div>
-
-  <div class="metrics-grid">
-    <div class="metric-card">
-      <span>推定心拍数 (BPM)</span>
-      <strong id="bpmVal" class="val-accent">--</strong>
-      <div class="metric-note">1分間の心臓の拍動ペース</div>
-    </div>
-    <div class="metric-card">
-      <span>心拍変動 (HRV / RMSSD)</span>
-      <strong id="hrvVal" class="val-accent">--</strong>
-      <div class="metric-note">脳と心の「余裕度・柔軟性」</div>
-    </div>
-    <div class="metric-card">
-      <span>自律神経バランス</span>
-      <strong id="stateVal" style="font-size:12px;">待機中</strong>
-      <div class="metric-note" id="stateNoteDisplay">戦闘モードか休息モードか</div>
-    </div>
-    <div class="metric-card">
-      <span>信号品質 / SNR</span>
-      <strong id="snrVal" style="font-size:12px;">--</strong>
-      <div class="metric-note">脈波の鮮明度と信頼性</div>
+    <div class="overlay-ui">
+      <div class="overlay-top">
+        <div class="timer-badge" id="timerBadge">05.00s</div>
+        <div class="live-score-badge" id="liveScoreBadge">SCORE: 0</div>
+      </div>
+      
+      <div class="match-gauge-container">
+        <div class="match-gauge-header">
+          <span id="targetEmotionLabel">AI理想表情 一致度</span>
+          <span id="matchPercentLabel">0%</span>
+        </div>
+        <div class="gauge-bar-bg">
+          <div class="gauge-bar-fill" id="gaugeBarFill"></div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div class="baseline-card" id="baselineCard">
-    <div class="baseline-item">個人ベースライン: <b id="baseAvgBpm">--</b> bpm / HRV <b id="baseAvgHrv">--</b> ms</div>
-    <div class="baseline-item" id="baseCountText">累計計測: 0回</div>
-  </div>
-
-  <div class="recorded-log-card" id="recordedLogCard">
-    <div class="recorded-log-header">
-      <span>最新測定ログをブラウザに永続記録完了</span>
-      <span id="logRecordedTime">--:--:--</span>
+  <div class="controls-panel">
+    <div class="category-grid">
+      <div class="btn-cat active" id="catSmile" onclick="selectCategory('smile')">笑顔 部門</div>
+      <div class="btn-cat" id="catAnger" onclick="selectCategory('anger')">怒り 部門</div>
+      <div class="btn-cat" id="catSad" onclick="selectCategory('sad')">悲しみ 部門</div>
     </div>
-    <div class="recorded-log-body" id="logRecordedBody"></div>
+
+    <button id="mainBtn" class="btn-main btn-start" onclick="handleMainAction()">カメラを起動する</button>
   </div>
 
-  <div id="agentActionCard" class="agent-action-card">
-    <div class="agent-action-header">
-      <span id="agentStatusTitle">自律的端末制御を実行</span>
-      <span id="toolNameDisplay">最適化処理完了</span>
+  <!-- スコア登録・結果画面 -->
+  <div class="result-card" id="resultCard">
+    <div class="result-title" id="resultTitle">チャレンジ成功！</div>
+    <div class="result-score-box">
+      <div style="font-size:11px; color:#94a3b8;">獲得トータルスコア</div>
+      <div class="score-big" id="finalScoreVal">0</div>
+      <div style="font-size:10px; color:#38bdf8;" id="aiCommentVal">AI評価：素晴らしい表情筋の可動域です</div>
     </div>
-    <div id="agentActionList" class="agent-action-list"></div>
-  </div>
 
-  <div id="reportCard" class="report-card">
-    <div class="report-title">
-      <span>日次バイタルチェックカルテ (推移分析)</span>
-      <span id="reportTimestamp">--:--:--</span>
+    <div class="name-input-row">
+      <input type="text" id="playerNameInput" class="name-input" placeholder="ニックネームを入力 (5文字以内)" maxlength="5">
+      <button class="btn-register" onclick="registerScore()">ランキング登録</button>
     </div>
-    <div id="reportContent" class="report-content"></div>
   </div>
 
-  <div class="btn-group">
-    <button id="cameraBtn" class="btn-action btn-camera" onclick="startCameraOnly()">カメラを起動して位置を合わせる</button>
-    <button id="measureBtn" class="btn-action btn-measure" onclick="startMeasurementOnly()" disabled>10秒間の生体計測を開始</button>
-  </div>
-  <button id="resetEnvBtn" class="btn-reset" onclick="resetEnvironment()">画面の適応モードを解除</button>
-
-  <div class="history-card" id="historyCard">
-    <div class="history-header">
-      <span>蓄積バイタル履歴一覧 (日跨ぎ保存)</span>
-      <button class="btn-clear-history" onclick="clearVitalHistory()">全履歴を初期化</button>
+  <!-- ランキング表示 -->
+  <div class="ranking-card">
+    <div class="ranking-header">
+      <span id="rankingCategoryTitle">笑顔部門 本日のハイスコア TOP 5</span>
+      <button style="background:none;border:none;color:#64748b;font-size:9px;cursor:pointer;" onclick="clearRanking()">初期化</button>
     </div>
-    <div class="history-list" id="historyList">
-      <div style="color:#64748b; text-align:center; padding:6px 0;">まだ測定履歴がありません</div>
+    <div class="ranking-list" id="rankingList">
+      <!-- JSで動的生成 -->
     </div>
   </div>
 
   <script>
-    const WORKER_ENDPOINT = "https://mizki1.6wvgd82df8.workers.dev";
-
     const videoElement = document.getElementById('inputVideo');
     const outputCanvas = document.getElementById('outputCanvas');
     const outCtx = outputCanvas.getContext('2d');
-    const specCanvas = document.getElementById('spectrumCanvas');
-    const specCtx = specCanvas.getContext('2d');
 
     let cameraInstance = null;
     let isCameraReady = false;
-    let isScanning = false;
-    let isWarmingUp = false;
-    
-    let currentModeSeconds = 10;
-    let targetValidFrames = 300;
-    let accumulatedValidFrames = 0;
 
-    const rawSignals = [];
-    const timestamps = [];
-    const rgbBuffer = { r: [], g: [], b: [] };
-    let currentWaveColor = '#38bdf8';
+    // ゲーム状態: 'idle', 'calibrating', 'countdown', 'battling', 'finished'
+    let gameState = 'idle';
+    let currentCategory = 'smile'; // smile, anger, sad
 
-    let bp_x1 = 0, bp_x2 = 0, bp_y1 = 0, bp_y2 = 0;
-    let lastDetectedBpm = null;
+    let baselineFace = null; // 真顔サンプリングデータ
+    let calibrationFrames = [];
 
-    let lastNoseX = null;
-    let lastNoseY = null;
+    let battleTimer = null;
+    let battleStartTime = 0;
+    const BATTLE_DURATION = 5000; // 5秒
+    let totalAccumulatedScore = 0;
+    let currentMatchRatio = 0;
 
-    function getStoredHistory() {
+    // 理想表情幾何学パラメータ
+    // FACS (Facial Action Coding System) に基づく解剖学的変位係数
+    const EMOTION_CONFIG = {
+      smile: {
+        label: '笑顔部門 (最高の笑顔を見せてください！)',
+        keyPoints: [61, 291, 13, 14, 0, 17, 159, 145, 386, 374],
+        evaluate: (curr, base) => {
+          // 口角間距離の拡張（大頬骨筋）
+          const baseMouthWidth = Math.hypot(base[291].x - base[61].x, base[291].y - base[61].y);
+          const currMouthWidth = Math.hypot(curr[291].x - curr[61].x, curr[291].y - curr[61].y);
+          const mouthStretch = (currMouthWidth - baseMouthWidth) / baseMouthWidth;
+
+          // 口角の引き上がり（鼻翼ベースとのY差分）
+          const baseLipElev = ((base[61].y + base[291].y) / 2) - base[1].y;
+          const currLipElev = ((curr[61].y + curr[291].y) / 2) - curr[1].y;
+          const lipUp = (baseLipElev - currLipElev) * 10; // マイナス方向（上）への変位
+
+          // 目尻の細まり（眼輪筋）
+          const baseLeftEyeH = Math.hypot(base[159].x - base[145].x, base[159].y - base[145].y);
+          const currLeftEyeH = Math.hypot(curr[159].x - curr[145].x, curr[159].y - curr[145].y);
+          const eyeSquint = (baseLeftEyeH - currLeftEyeH) / baseLeftEyeH;
+
+          // 総合一致度（0.0 〜 1.0）
+          const score = (mouthStretch * 2.8) + (lipUp * 1.8) + (eyeSquint * 0.8);
+          return Math.min(1.0, Math.max(0, score * 1.8));
+        }
+      },
+      anger: {
+        label: '怒り部門 (眉間を寄せて睨みつけてください！)',
+        keyPoints: [70, 300, 107, 336, 9, 8],
+        evaluate: (curr, base) => {
+          // 眉頭間距離の接近（皺眉筋）
+          const baseBrowDist = Math.hypot(base[336].x - base[107].x, base[336].y - base[107].y);
+          const currBrowDist = Math.hypot(curr[336].x - curr[107].x, curr[336].y - curr[107].y);
+          const browClinch = (baseBrowDist - currBrowDist) / baseBrowDist;
+
+          // 眉頭の下垂
+          const browDrop = (curr[9].y - base[9].y) * 12;
+
+          // 総合一致度
+          const score = (browClinch * 3.5) + (browDrop * 1.5);
+          return Math.min(1.0, Math.max(0, score * 2.0));
+        }
+      },
+      sad: {
+        label: '悲しみ部門 (眉を八の字にして口角を下げてください！)',
+        keyPoints: [107, 336, 70, 300, 61, 291, 17],
+        evaluate: (curr, base) => {
+          // 眉頭の持ち上がり（前頭筋内側）
+          const browInnerLift = (base[9].y - curr[9].y) * 15;
+
+          // 口角の下垂（口角下制筋）
+          const baseLipElev = ((base[61].y + base[291].y) / 2) - base[1].y;
+          const currLipElev = ((curr[61].y + curr[291].y) / 2) - curr[1].y;
+          const lipDown = (currLipElev - baseLipElev) * 12;
+
+          const score = (browInnerLift * 2.2) + (lipDown * 2.0);
+          return Math.min(1.0, Math.max(0, score * 1.9));
+        }
+      }
+    };
+
+    function selectCategory(cat) {
+      if (gameState === 'battling' || gameState === 'calibrating') return;
+      currentCategory = cat;
+      document.getElementById('catSmile').classList.toggle('active', cat === 'smile');
+      document.getElementById('catAnger').classList.toggle('active', cat === 'anger');
+      document.getElementById('catSad').classList.toggle('active', cat === 'sad');
+
+      document.getElementById('targetEmotionLabel').innerText = `AI理想一致度 (${currentCategory.toUpperCase()})`;
+      updateRankingUI();
+    }
+
+    function handleMainAction() {
+      if (!isCameraReady) {
+        startCamera();
+      } else if (gameState === 'idle' || gameState === 'finished') {
+        startCalibrationSequence();
+      }
+    }
+
+    async function startCamera() {
+      const btn = document.getElementById('mainBtn');
+      btn.disabled = true;
+      btn.innerText = 'カメラ接続中...';
+
       try {
-        const stored = localStorage.getItem('rppg_vital_history');
-        return stored ? JSON.parse(stored) : [];
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        videoElement.srcObject = stream;
+        await videoElement.play();
+
+        outputCanvas.width = 640;
+        outputCanvas.height = 480;
+
+        cameraInstance = new Camera(videoElement, {
+          onFrame: async () => { await faceMesh.send({ image: videoElement }); },
+          width: 640, height: 480
+        });
+        await cameraInstance.start();
+
+        isCameraReady = true;
+        document.getElementById('cameraStatusBadge').innerText = '準備完了';
+        btn.disabled = false;
+        btn.innerText = '真顔スキャンを開始 (ゲームスタート)';
+      } catch (e) {
+        alert('カメラの起動に失敗しました。');
+        btn.disabled = false;
+        btn.innerText = 'カメラを起動する';
+      }
+    }
+
+    // 真顔サンプリング
+    function startCalibrationSequence() {
+      document.getElementById('resultCard').style.display = 'none';
+      document.getElementById('mainBtn').disabled = true;
+      document.getElementById('mainBtn').innerText = '真顔を測定しています...';
+
+      const banner = document.getElementById('statusBanner');
+      banner.style.display = 'block';
+      banner.innerText = '真顔でカメラを直視してください';
+      banner.style.borderColor = '#38bdf8';
+
+      calibrationFrames = [];
+      gameState = 'calibrating';
+    }
+
+    // 5秒バトル開始
+    function startBattle() {
+      gameState = 'battling';
+      totalAccumulatedScore = 0;
+      battleStartTime = performance.now();
+
+      const banner = document.getElementById('statusBanner');
+      banner.style.display = 'block';
+      banner.innerText = EMOTION_CONFIG[currentCategory].label;
+      banner.style.borderColor = '#f59e0b';
+
+      document.getElementById('mainBtn').disabled = true;
+      document.getElementById('mainBtn').innerText = '表情筋バトル進行中！';
+
+      battleTimer = requestAnimationFrame(battleLoop);
+    }
+
+    function battleLoop(now) {
+      if (gameState !== 'battling') return;
+
+      const elapsed = now - battleStartTime;
+      const remain = Math.max(0, BATTLE_DURATION - elapsed);
+
+      const sec = (remain / 1000).toFixed(2);
+      document.getElementById('timerBadge').innerText = `${sec.padStart(5, '0')}s`;
+
+      // スコア累積（一致度 × フレーム係数）
+      totalAccumulatedScore += Math.round(currentMatchRatio * 45);
+      document.getElementById('liveScoreBadge').innerText = `SCORE: ${totalAccumulatedScore}`;
+
+      if (remain <= 0) {
+        finishBattle();
+      } else {
+        battleTimer = requestAnimationFrame(battleLoop);
+      }
+    }
+
+    function finishBattle() {
+      gameState = 'finished';
+      cancelAnimationFrame(battleTimer);
+
+      document.getElementById('statusBanner').style.display = 'none';
+      document.getElementById('timerBadge').innerText = '00.00s';
+
+      const mainBtn = document.getElementById('mainBtn');
+      mainBtn.disabled = false;
+      mainBtn.innerText = 'もう一度挑戦する';
+
+      // 結果表示
+      document.getElementById('finalScoreVal').innerText = totalAccumulatedScore;
+      
+      let comment = '素晴らしい可動域！表情筋のエキスパートです。';
+      if (totalAccumulatedScore < 2000) comment = '緊張していましたか？もっと大胆に筋肉を動かしてみましょう！';
+      else if (totalAccumulatedScore > 5000) comment = '殿堂入りレベル！AIの想像を超える圧倒的な表現力です。';
+      document.getElementById('aiCommentVal').innerText = comment;
+
+      document.getElementById('resultCard').style.display = 'block';
+    }
+
+    // MediaPipe 描画・解析ループ
+    const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+
+    faceMesh.onResults((res) => {
+      outCtx.save();
+      outCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+      
+      // 鏡像反転
+      outCtx.translate(outputCanvas.width, 0);
+      outCtx.scale(-1, 1);
+      outCtx.drawImage(res.image, 0, 0, outputCanvas.width, outputCanvas.height);
+
+      if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
+        const lm = res.multiFaceLandmarks[0];
+
+        // 幾何学メッシュのサイバー描画
+        drawCyberFacialMesh(lm);
+
+        // 真顔キャリブレーション処理
+        if (gameState === 'calibrating') {
+          calibrationFrames.push(lm);
+          if (calibrationFrames.length >= 30) { // 1秒分蓄積
+            baselineFace = averageLandmarks(calibrationFrames);
+            document.getElementById('statusBanner').innerText = '3秒後にスタート！';
+            setTimeout(() => {
+              startBattle();
+            }, 1200);
+          }
+        }
+
+        // バトル中の一致度評価
+        if (gameState === 'battling' && baselineFace) {
+          const match = EMOTION_CONFIG[currentCategory].evaluate(lm, baselineFace);
+          currentMatchRatio = match;
+
+          const pct = Math.round(match * 100);
+          document.getElementById('matchPercentLabel').innerText = `${pct}%`;
+          document.getElementById('gaugeBarFill').style.width = `${pct}%`;
+
+          // 一致度が高いときは画面にエフェクト
+          if (match > 0.8) {
+            drawHighMatchGlow(lm);
+          }
+        }
+      }
+      outCtx.restore();
+    });
+
+    function averageLandmarks(frameList) {
+      const avg = [];
+      const numPoints = frameList[0].length;
+      for (let i = 0; i < numPoints; i++) {
+        let sx = 0, sy = 0, sz = 0;
+        frameList.forEach(frame => {
+          sx += frame[i].x;
+          sy += frame[i].y;
+          sz += frame[i].z;
+        });
+        avg.push({
+          x: sx / frameList.length,
+          y: sy / frameList.length,
+          z: sz / frameList.length
+        });
+      }
+      return avg;
+    }
+
+    function drawCyberFacialMesh(landmarks) {
+      outCtx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+      outCtx.lineWidth = 1;
+
+      // 輪郭と主要パーツのライン
+      const keyConnections = [
+        [61, 146], [146, 91], [91, 181], [181, 84], [84, 17],
+        [17, 314], [314, 405], [405, 321], [321, 375], [375, 291],
+        [61, 185], [185, 40], [40, 39], [39, 37], [37, 0],
+        [0, 267], [267, 269], [269, 270], [270, 409], [409, 291],
+        [70, 63], [63, 105], [105, 66], [66, 107],
+        [336, 296], [296, 334], [334, 293], [293, 300]
+      ];
+
+      keyConnections.forEach(([p1, p2]) => {
+        const pt1 = landmarks[p1];
+        const pt2 = landmarks[p2];
+        outCtx.beginPath();
+        outCtx.moveTo(pt1.x * outputCanvas.width, pt1.y * outputCanvas.height);
+        outCtx.lineTo(pt2.x * outputCanvas.width, pt2.y * outputCanvas.height);
+        outCtx.stroke();
+      });
+
+      // ポイント点
+      outCtx.fillStyle = '#38bdf8';
+      [61, 291, 107, 336, 1, 13, 14].forEach(idx => {
+        const pt = landmarks[idx];
+        outCtx.beginPath();
+        outCtx.arc(pt.x * outputCanvas.width, pt.y * outputCanvas.height, 2.5, 0, Math.PI * 2);
+        outCtx.fill();
+      });
+    }
+
+    function drawHighMatchGlow(landmarks) {
+      outCtx.save();
+      outCtx.strokeStyle = '#10b981';
+      outCtx.lineWidth = 3;
+      outCtx.shadowColor = '#10b981';
+      outCtx.shadowBlur = 12;
+
+      // 口元や眉のハイライト
+      [61, 291].forEach(idx => {
+        const pt = landmarks[idx];
+        outCtx.beginPath();
+        outCtx.arc(pt.x * outputCanvas.width, pt.y * outputCanvas.height, 6, 0, Math.PI * 2);
+        outCtx.stroke();
+      });
+      outCtx.restore();
+    }
+
+    /* ローカルストレージ ランキング機能 */
+    function getRanking(cat) {
+      try {
+        const data = localStorage.getItem(`ranking_${cat}`);
+        return data ? JSON.parse(data) : [];
       } catch (e) {
         return [];
       }
     }
 
-    function saveVitalRecord(record) {
+    function saveRanking(cat, list) {
       try {
-        const history = getStoredHistory();
-        history.unshift(record);
-        if (history.length > 50) history.pop();
-        localStorage.setItem('rppg_vital_history', JSON.stringify(history));
-        updateHistoryUI();
-      } catch (e) {
-        console.warn('履歴保存失敗:', e);
-      }
+        localStorage.setItem(`ranking_${cat}`, JSON.stringify(list));
+      } catch (e) {}
     }
 
-    function clearVitalHistory() {
-      if (confirm('蓄積された測定履歴を消去し、ベースラインを初期化しますか？')) {
-        localStorage.removeItem('rppg_vital_history');
-        document.getElementById('recordedLogCard').style.display = 'none';
-        updateHistoryUI();
-      }
+    function registerScore() {
+      const nameInput = document.getElementById('playerNameInput');
+      const name = nameInput.value.trim() || '名無し';
+
+      const ranking = getRanking(currentCategory);
+      ranking.push({ name: name, score: totalAccumulatedScore, date: new Date().toLocaleTimeString() });
+      ranking.sort((a, b) => b.score - a.score);
+      const top5 = ranking.slice(0, 5);
+
+      saveRanking(currentCategory, top5);
+      updateRankingUI();
+
+      nameInput.value = '';
+      document.getElementById('resultCard').style.display = 'none';
+      alert('ランキングに登録しました！');
     }
 
-    function getHistoryContextSummary() {
-      const history = getStoredHistory();
-      if (history.length === 0) return { count: 0 };
+    function updateRankingUI() {
+      const catLabels = { smile: '笑顔部門', anger: '怒り部門', sad: '悲しみ部門' };
+      document.getElementById('rankingCategoryTitle').innerText = `${catLabels[currentCategory]} 本日のハイスコア TOP 5`;
 
-      const totalBpm = history.reduce((sum, h) => sum + h.bpm, 0);
-      const totalHrv = history.reduce((sum, h) => sum + h.hrv, 0);
-      const avgBpm = Math.round(totalBpm / history.length);
-      const avgHrv = Math.round(totalHrv / history.length);
+      const listEl = document.getElementById('rankingList');
+      const ranking = getRanking(currentCategory);
 
-      const recentStressCount = history.slice(0, 3).filter(h => h.stateLabel && h.stateLabel.includes('緊張')).length;
-      let recentTrend = '直近は安定傾向';
-      if (recentStressCount >= 2) recentTrend = '直近で交感神経の緊張傾向が連続';
-
-      return { count: history.length, avgBpm, avgHrv, recentTrend };
-    }
-
-    function updateHistoryUI() {
-      const history = getStoredHistory();
-      const listEl = document.getElementById('historyList');
-      const baseAvgBpm = document.getElementById('baseAvgBpm');
-      const baseAvgHrv = document.getElementById('baseAvgHrv');
-      const baseCountText = document.getElementById('baseCountText');
-
-      if (history.length === 0) {
-        listEl.innerHTML = '<div style="color:#64748b; text-align:center; padding:6px 0;">まだ測定履歴がありません</div>';
-        baseAvgBpm.innerText = '--';
-        baseAvgHrv.innerText = '--';
-        baseCountText.innerText = '累計計測: 0回';
+      if (ranking.length === 0) {
+        listEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:4px 0;">まだスコアがありません</div>';
         return;
       }
 
-      const totalBpm = history.reduce((sum, h) => sum + h.bpm, 0);
-      const totalHrv = history.reduce((sum, h) => sum + h.hrv, 0);
-      baseAvgBpm.innerText = Math.round(totalBpm / history.length);
-      baseAvgHrv.innerText = Math.round(totalHrv / history.length);
-      baseCountText.innerText = `累計計測: ${history.length}回`;
-
-      listEl.innerHTML = history.slice(0, 10).map(h => `
-        <div class="history-row">
-          <span>${h.date.split(' ')[0]} ${h.date.split(' ')[1]} (${h.mode}s)</span>
-          <span>BPM: <b>${h.bpm}</b> / HRV: <b>${h.hrv}ms</b> / SNR: <b>${h.snr}dB</b></span>
-          <span style="color:#38bdf8; font-weight:700;">${h.stateLabel}</span>
+      listEl.innerHTML = ranking.map((r, i) => `
+        <div class="ranking-row ${i === 0 ? 'rank-top1' : (i === 1 ? 'rank-top2' : (i === 2 ? 'rank-top3' : ''))}">
+          <span><b>#${i + 1}</b> ${r.name}</span>
+          <span><b>${r.score.toLocaleString()}</b> pts <span style="font-size:9px;color:#64748b;">(${r.date})</span></span>
         </div>
       `).join('');
     }
 
-    function setMeasureMode(sec) {
-      if (isScanning) return;
-      currentModeSeconds = sec;
-      targetValidFrames = sec * 30;
-
-      document.getElementById('mode10').classList.toggle('active', sec === 10);
-      document.getElementById('mode60').classList.toggle('active', sec === 60);
-
-      document.getElementById('currentModeBadge').innerText = sec === 10 ? '10秒 クイック' : '60秒 学術精度';
-      const measureBtn = document.getElementById('measureBtn');
-      if (!isScanning) {
-        measureBtn.innerText = `${sec}秒間の生体計測を開始`;
+    function clearRanking() {
+      if (confirm(`${currentCategory}部門のランキングをリセットしますか？`)) {
+        localStorage.removeItem(`ranking_${currentCategory}`);
+        updateRankingUI();
       }
-    }
-
-    function extractMultiRoiBounding(landmarks) {
-      function getBox(indices) {
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        indices.forEach(idx => {
-          const pt = landmarks[idx];
-          const px = pt.x * outputCanvas.width;
-          const py = pt.y * outputCanvas.height;
-          if (px < minX) minX = px;
-          if (px > maxX) maxX = px;
-          if (py < minY) minY = py;
-          if (py > maxY) maxY = py;
-        });
-        return {
-          x: Math.floor(minX),
-          y: Math.floor(minY),
-          w: Math.max(8, Math.floor(maxX - minX)),
-          h: Math.max(8, Math.floor(maxY - minY))
-        };
-      }
-
-      return {
-        forehead: getBox([10, 67, 109, 108, 151, 337, 297, 299]),
-        leftCheek: getBox([117, 118, 101, 50, 187, 207]),
-        rightCheek: getBox([346, 347, 330, 280, 411, 427]),
-        landmarks
-      };
-    }
-
-    function checkInsideSilhouette(landmarks) {
-      const keyPoints = [landmarks[1], landmarks[10], landmarks[152], landmarks[234], landmarks[454]];
-      const minX = 0.22, maxX = 0.78;
-      const minY = 0.08, maxY = 0.72;
-
-      for (let i = 0; i < keyPoints.length; i++) {
-        const pt = keyPoints[i];
-        if (pt.x < minX || pt.x > maxX || pt.y < minY || pt.y > maxY) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    function extractSkinChromSignal(multiRoi) {
-      try {
-        let totalR = 0, totalG = 0, totalB = 0, totalCount = 0;
-        const rois = [multiRoi.forehead, multiRoi.leftCheek, multiRoi.rightCheek];
-
-        for (let r = 0; r < rois.length; r++) {
-          const roi = rois[r];
-          const frameData = outCtx.getImageData(roi.x, roi.y, roi.w, roi.h).data;
-          for (let i = 0; i < frameData.length; i += 4) {
-            totalR += frameData[i];
-            totalG += frameData[i + 1];
-            totalB += frameData[i + 2];
-            totalCount++;
-          }
-        }
-        if (totalCount === 0) return null;
-
-        const R = totalR / totalCount;
-        const G = totalG / totalCount;
-        const B = totalB / totalCount;
-
-        rgbBuffer.r.push(R);
-        rgbBuffer.g.push(G);
-        rgbBuffer.b.push(B);
-        if (rgbBuffer.r.length > 60) {
-          rgbBuffer.r.shift();
-          rgbBuffer.g.shift();
-          rgbBuffer.b.shift();
-        }
-
-        const meanR = rgbBuffer.r.reduce((a, b) => a + b, 0) / rgbBuffer.r.length;
-        const meanG = rgbBuffer.g.reduce((a, b) => a + b, 0) / rgbBuffer.g.length;
-        const meanB = rgbBuffer.b.reduce((a, b) => a + b, 0) / rgbBuffer.b.length;
-
-        const normR = meanR > 0 ? R / meanR : 1;
-        const normG = meanG > 0 ? G / meanG : 1;
-        const normB = meanB > 0 ? B / meanB : 1;
-
-        const Xs = 3 * normR - 2 * normG;
-        const Ys = 1.5 * normR + normG - 1.5 * normB;
-        return Xs - 0.7 * Ys;
-      } catch (e) {
-        return null;
-      }
-    }
-
-    function drawHighContrastPulseOverlay(multiRoi, signalVal) {
-      if (!isScanning || isWarmingUp) return;
-      const clamped = Math.max(-1.5, Math.min(1.5, signalVal));
-      const intensity = Math.min(1.0, Math.abs(clamped) / 1.0);
-
-      outCtx.save();
-      outCtx.globalCompositeOperation = 'screen';
-
-      const fx = multiRoi.landmarks[10].x * outputCanvas.width;
-      const fy = multiRoi.landmarks[10].y * outputCanvas.height;
-      const leftCheek = multiRoi.landmarks[117];
-      const rightCheek = multiRoi.landmarks[346];
-
-      [
-        { x: fx, y: fy, r: 38 },
-        { x: leftCheek.x * outputCanvas.width, y: leftCheek.y * outputCanvas.height, r: 32 },
-        { x: rightCheek.x * outputCanvas.width, y: rightCheek.y * outputCanvas.height, r: 32 }
-      ].forEach(zone => {
-        const grad = outCtx.createRadialGradient(zone.x, zone.y, 2, zone.x, zone.y, zone.r);
-        if (signalVal > 0) {
-          const alpha = 0.2 + intensity * 0.75;
-          grad.addColorStop(0, `rgba(0, 242, 254, ${alpha})`);
-          grad.addColorStop(0.6, `rgba(0, 200, 255, ${alpha * 0.5})`);
-          grad.addColorStop(1, 'rgba(0, 200, 255, 0)');
-        } else {
-          const alpha = 0.2 + intensity * 0.75;
-          grad.addColorStop(0, `rgba(245, 158, 11, ${alpha})`);
-          grad.addColorStop(0.6, `rgba(234, 88, 12, ${alpha * 0.5})`);
-          grad.addColorStop(1, 'rgba(234, 88, 12, 0)');
-        }
-        outCtx.fillStyle = grad;
-        outCtx.beginPath();
-        outCtx.arc(zone.x, zone.y, zone.r, 0, Math.PI * 2);
-        outCtx.fill();
-      });
-
-      outCtx.restore();
-    }
-
-    function applyBandpassFilter(input) {
-      const b0 = 0.0825, b1 = 0, b2 = -0.0825;
-      const a1 = -1.1856, a2 = 0.3845;
-
-      const output = b0 * input + b1 * bp_x1 + b2 * bp_x2 - a1 * bp_y1 - a2 * bp_y2;
-      bp_x2 = bp_x1;
-      bp_x1 = input;
-      bp_y2 = bp_y1;
-      bp_y1 = output;
-
-      return output;
-    }
-
-    function resampleUniform(signals, times, targetFs = 30.0) {
-      if (signals.length < 2) return { resampledSignals: signals, dt: 1000 / targetFs };
-
-      const dt = 1000 / targetFs;
-      const startTime = times[0];
-      const endTime = times[times.length - 1];
-      const resampledSignals = [];
-
-      let srcIdx = 0;
-      for (let t = startTime; t <= endTime; t += dt) {
-        while (srcIdx < times.length - 1 && times[srcIdx + 1] < t) {
-          srcIdx++;
-        }
-        if (srcIdx >= times.length - 1) {
-          resampledSignals.push(signals[signals.length - 1]);
-        } else {
-          const t0 = times[srcIdx];
-          const t1 = times[srcIdx + 1];
-          const v0 = signals[srcIdx];
-          const v1 = signals[srcIdx + 1];
-          const factor = (t1 === t0) ? 0 : (t - t0) / (t1 - t0);
-          resampledSignals.push(v0 + factor * (v1 - v0));
-        }
-      }
-
-      return { resampledSignals, dt };
-    }
-
-    function computeFFT(real, imag) {
-      const n = real.length;
-      let j = 0;
-      for (let i = 0; i < n - 1; i++) {
-        if (i < j) {
-          let tr = real[i]; real[i] = real[j]; real[j] = tr;
-          let ti = imag[i]; imag[i] = imag[j]; imag[j] = ti;
-        }
-        let k = n / 2;
-        while (k <= j) {
-          j -= k;
-          k /= 2;
-        }
-        j += k;
-      }
-      for (let l = 2; l <= n; l *= 2) {
-        const ang = -2 * Math.PI / l;
-        const wstepR = Math.cos(ang);
-        const wstepI = Math.sin(ang);
-        for (let i = 0; i < n; i += l) {
-          let wR = 1.0, wI = 0.0;
-          for (let m = 0; m < l / 2; m++) {
-            const uR = real[i + m], uI = imag[i + m];
-            const vR = real[i + m + l / 2] * wR - imag[i + m + l / 2] * wI;
-            const vI = real[i + m + l / 2] * wI + imag[i + m + l / 2] * wR;
-            real[i + m] = uR + vR;
-            imag[i + m] = uI + vI;
-            real[i + m + l / 2] = uR - vR;
-            imag[i + m + l / 2] = uI - vI;
-            const nextWR = wR * wstepR - wI * wstepI;
-            wI = wR * wstepI + wI * wstepR;
-            wR = nextWR;
-          }
-        }
-      }
-    }
-
-    function drawAmplitudeSpectrum(signals, times) {
-      if (signals.length < 24) return { snrDb: "0.0", peakFreq: 0, estimatedBpm: 72, snrNum: 0 };
-
-      const N = 512;
-      const windowFrames = Math.min(300, signals.length);
-      const { resampledSignals } = resampleUniform(signals.slice(-windowFrames), times.slice(-windowFrames), 30.0);
-      
-      const real = new Float32Array(N);
-      const imag = new Float32Array(N);
-      const len = Math.min(windowFrames, resampledSignals.length);
-      const offset = resampledSignals.length - len;
-
-      let mean = 0;
-      for (let i = 0; i < len; i++) mean += resampledSignals[offset + i];
-      mean /= len;
-
-      for (let i = 0; i < len; i++) {
-        const w = 0.54 - 0.46 * Math.cos(2 * Math.PI * i / (len - 1));
-        real[i] = (resampledSignals[offset + i] - mean) * w;
-        imag[i] = 0;
-      }
-
-      computeFFT(real, imag);
-
-      const maxFreq = 3.0;
-      const fs = 30.0;
-      const freqStep = fs / N;
-      const numBins = Math.floor(maxFreq / freqStep);
-
-      const amps = [];
-      let maxWeightedScore = 0.00001;
-      let peakIdx = 0;
-
-      for (let i = 0; i < numBins; i++) {
-        const mag = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
-        amps.push(mag);
-        const freq = i * freqStep;
-
-        // 【修正1：高調波誤吸着防止】人間の安静時基本心拍帯（0.85〜1.80Hz ≒ 51〜108bpm）を主軸に評価
-        if (freq >= 0.85 && freq <= 2.80) {
-          let weight = 1.0;
-          
-          if (freq > 1.80) {
-            // 2倍の山（150bpm帯）を過大評価しないよう高周波側を減衰
-            weight = 0.65;
-          } else if (freq >= 1.05 && freq <= 1.55) {
-            // 通常の安静時心拍帯（63〜93bpm）を適度に優先
-            weight = 1.15;
-          }
-
-          const score = mag * weight;
-          if (score > maxWeightedScore) {
-            maxWeightedScore = score;
-            peakIdx = i;
-          }
-        }
-      }
-
-      // 【修正2：77bpm吸い寄せ解消】3点放物線補間（Parabolic Interpolation）により連続周波数を推定
-      let exactPeakIdx = peakIdx;
-      if (peakIdx > 0 && peakIdx < numBins - 1) {
-        const alpha = amps[peakIdx - 1];
-        const beta = amps[peakIdx];
-        const gamma = amps[peakIdx + 1];
-        const denom = (alpha - 2 * beta + gamma);
-        if (Math.abs(denom) > 1e-6) {
-          const delta = 0.5 * (alpha - gamma) / denom;
-          if (Math.abs(delta) < 1.0) {
-            exactPeakIdx = peakIdx + delta;
-          }
-        }
-      }
-
-      const detectedFreq = exactPeakIdx * freqStep;
-      const estimatedBpm = Math.round(detectedFreq * 60);
-      lastDetectedBpm = estimatedBpm;
-
-      let signalPower = 0;
-      let totalPower = 0;
-      for (let i = 1; i < numBins; i++) {
-        const p = amps[i] * amps[i];
-        totalPower += p;
-        if (Math.abs(i - peakIdx) <= 2) signalPower += p;
-      }
-      const noisePower = Math.max(0.0001, totalPower - signalPower);
-      const snrValNum = signalPower > 0 ? (10 * Math.log10(signalPower / noisePower)) : 0;
-      const snrVal = snrValNum.toFixed(1);
-
-      specCtx.clearRect(0, 0, specCanvas.width, specCanvas.height);
-
-      const padL = 28, padR = 12, padT = 26, padB = 18;
-      const plotW = specCanvas.width - padL - padR;
-      const plotH = specCanvas.height - padT - padB;
-
-      specCtx.strokeStyle = '#1e293b';
-      specCtx.lineWidth = 1;
-      specCtx.font = '8px monospace';
-      specCtx.fillStyle = '#64748b';
-      specCtx.textAlign = 'center';
-
-      for (let f = 0; f <= 3.0; f += 0.5) {
-        const x = padL + (f / 3.0) * plotW;
-        specCtx.beginPath();
-        specCtx.moveTo(x, padT);
-        specCtx.lineTo(x, padT + plotH);
-        specCtx.stroke();
-        specCtx.fillText(f.toFixed(1), x, specCanvas.height - 4);
-      }
-
-      let globalMax = 0.005;
-      for (let i = 0; i < numBins; i++) if (amps[i] > globalMax) globalMax = amps[i];
-      const displayMax = globalMax * 1.25;
-
-      specCtx.strokeStyle = currentWaveColor;
-      specCtx.lineWidth = 1.8;
-      specCtx.beginPath();
-
-      for (let i = 0; i < numBins; i++) {
-        const x = padL + (i / (numBins - 1)) * plotW;
-        const norm = Math.min(1.0, amps[i] / displayMax);
-        const y = padT + plotH - (norm * plotH);
-        if (i === 0) specCtx.moveTo(x, y);
-        else specCtx.lineTo(x, y);
-      }
-      specCtx.stroke();
-
-      const respX = padL + (0.4 / 3.0) * plotW;
-      specCtx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
-      specCtx.setLineDash([4, 2, 1, 2]);
-      specCtx.beginPath();
-      specCtx.moveTo(respX, padT);
-      specCtx.lineTo(respX, padT + plotH);
-      specCtx.stroke();
-      specCtx.fillStyle = '#94a3b8';
-      specCtx.fillText('Resp 0.4Hz', respX, padT + 8);
-
-      if (detectedFreq >= 0.85) {
-        const hrX = padL + (detectedFreq / 3.0) * plotW;
-        specCtx.strokeStyle = '#f43f5e';
-        specCtx.setLineDash([3, 3]);
-        specCtx.beginPath();
-        specCtx.moveTo(hrX, padT);
-        specCtx.lineTo(hrX, padT + plotH);
-        specCtx.stroke();
-        specCtx.fillStyle = '#f43f5e';
-        specCtx.fillText(`HR ${estimatedBpm}bpm`, hrX, padT + 18);
-      }
-
-      specCtx.setLineDash([]);
-      return { snrDb: snrVal, peakFreq: detectedFreq, estimatedBpm, snrNum: snrValNum };
-    }
-
-    // 【修正3：HRV固定値40ms解消】感度調整とダイナミックフォールバック
-    function analyzeBiometrics() {
-      const minPoints = currentModeSeconds === 10 ? 40 : 200;
-      if (rawSignals.length < minPoints) return { bpm: 72, hrv: 42, intervals: [800, 810] };
-
-      const { resampledSignals, dt } = resampleUniform(rawSignals, timestamps, 30.0);
-
-      const windowSize = 15;
-      const detrended = [];
-      let sumSq = 0;
-      for (let i = 0; i < resampledSignals.length; i++) {
-        const start = Math.max(0, i - Math.floor(windowSize / 2));
-        const end = Math.min(resampledSignals.length, i + Math.floor(windowSize / 2));
-        let sum = 0;
-        for (let j = start; j < end; j++) sum += resampledSignals[j];
-        const val = resampledSignals[i] - (sum / (end - start));
-        detrended.push(val);
-        sumSq += val * val;
-      }
-
-      const rms = Math.sqrt(sumSq / detrended.length);
-      // 閾値を下げて微小な脈波ピークも漏らさず拾えるよう調整
-      const adaptiveThreshold = Math.max(0.003, rms * 0.22);
-
-      const peakIndices = [];
-      for (let i = 2; i < detrended.length - 2; i++) {
-        if (detrended[i] > detrended[i - 1] && 
-            detrended[i] > detrended[i - 2] && 
-            detrended[i] > detrended[i + 1] && 
-            detrended[i] > detrended[i + 2] && 
-            detrended[i] > adaptiveThreshold) {
-          peakIndices.push(i);
-        }
-      }
-
-      let bpm = lastDetectedBpm || 72;
-      const intervals = [];
-
-      for (let i = 1; i < peakIndices.length; i++) {
-        const diffMs = (peakIndices[i] - peakIndices[i - 1]) * dt;
-        // 許容間隔（40〜180 bpm相当）
-        if (diffMs >= 330 && diffMs <= 1500) {
-          intervals.push(diffMs);
-        }
-      }
-
-      let hrv;
-      if (intervals.length >= 2) {
-        let diffSqSum = 0;
-        for (let i = 1; i < intervals.length; i++) {
-          diffSqSum += Math.pow(intervals[i] - intervals[i - 1], 2);
-        }
-        hrv = Math.round(Math.sqrt(diffSqSum / (intervals.length - 1)));
-      } else {
-        // ピークが拾いきれない場合でも、信号のRMS振幅比率から推定HRVを動的に算出（固定値40を完全廃止）
-        const dynamicFactor = Math.min(1.0, Math.max(0.1, rms * 20));
-        hrv = Math.round(28 + dynamicFactor * 34); 
-      }
-
-      bpm = Math.min(170, Math.max(50, bpm));
-      hrv = Math.min(115, Math.max(10, hrv));
-
-      return { bpm, hrv, intervals };
-    }
-
-    async function requestCloudAiViaWorker(m, snr) {
-      const historyContext = getHistoryContextSummary();
-
-      const res = await fetch(WORKER_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bpm: m.bpm,
-          hrv: m.hrv,
-          intervals: m.intervals,
-          snr: snr,
-          modeSeconds: currentModeSeconds,
-          historyContext: historyContext
-        })
-      });
-
-      if (!res.ok) throw new Error('Worker通信エラー: ' + res.status);
-      return await res.json();
-    }
-
-    const AutonomousTools = {
-      applyDisplayTheme: function(theme) {
-        document.body.className = '';
-        const scanner = document.getElementById('scannerBox');
-        const card = document.getElementById('agentActionCard');
-
-        if (theme === 'amber') {
-          document.body.classList.add('theme-amber');
-          currentWaveColor = '#f59e0b';
-          scanner.style.borderColor = '#f59e0b';
-          scanner.style.boxShadow = '0 0 30px rgba(245, 158, 11, 0.4)';
-          card.style.borderColor = '#f59e0b';
-          document.getElementById('agentStatusTitle').style.color = '#f59e0b';
-        } else if (theme === 'cyan') {
-          document.body.classList.add('theme-cyan');
-          currentWaveColor = '#00f2fe';
-          scanner.style.borderColor = '#00f2fe';
-          scanner.style.boxShadow = '0 0 30px rgba(0, 242, 254, 0.4)';
-          card.style.borderColor = '#00f2fe';
-          document.getElementById('agentStatusTitle').style.color = '#00f2fe';
-        } else {
-          document.body.classList.add('theme-emerald');
-          currentWaveColor = '#10b981';
-          scanner.style.borderColor = '#10b981';
-          scanner.style.boxShadow = '0 0 30px rgba(16, 185, 129, 0.4)';
-          card.style.borderColor = '#10b981';
-          document.getElementById('agentStatusTitle').style.color = '#10b981';
-        }
-      },
-
-      triggerHaptic: function() {
-        if (!navigator.vibrate) return;
-        navigator.vibrate([250, 100, 250]);
-      }
-    };
-
-    function resetEnvironment() {
-      document.body.className = '';
-      currentWaveColor = '#38bdf8';
-      const scanner = document.getElementById('scannerBox');
-      scanner.style.borderColor = '#1e293b';
-      scanner.style.boxShadow = 'none';
-
-      document.getElementById('silhouetteSvg').style.stroke = 'rgba(56, 189, 248, 0.45)';
-      document.getElementById('scanLine').style.display = 'none';
-      document.getElementById('pulseIndicator').style.display = 'none';
-      document.getElementById('agentActionCard').style.display = 'none';
-      document.getElementById('reportCard').style.display = 'none';
-      document.getElementById('resetEnvBtn').style.display = 'none';
-      document.getElementById('recordedLogCard').style.display = 'none';
-      document.getElementById('guideHint').innerText = isCameraReady ? '枠内に顔を合わせ、計測開始を押してください' : '1. 先に「カメラを起動」を押してください';
-      document.getElementById('bpmVal').innerText = '--';
-      document.getElementById('hrvVal').innerText = '--';
-      document.getElementById('stateVal').innerText = '待機中';
-      document.getElementById('snrVal').innerText = '--';
-      document.getElementById('stateNoteDisplay').innerText = '戦闘モードか休息モードか';
-
-      const measureBtn = document.getElementById('measureBtn');
-      measureBtn.disabled = !isCameraReady;
-      measureBtn.innerText = `${currentModeSeconds}秒間の生体計測を開始`;
-
-      bp_x1 = 0; bp_x2 = 0; bp_y1 = 0; bp_y2 = 0;
-      rgbBuffer.r.length = 0;
-      rgbBuffer.g.length = 0;
-      rgbBuffer.b.length = 0;
-      lastDetectedBpm = null;
-      accumulatedValidFrames = 0;
-      lastNoseX = null;
-      lastNoseY = null;
-    }
-
-    const faceMesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
-    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
-    
-    faceMesh.onResults((res) => {
-      outCtx.save();
-      outCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
-      
-      outCtx.translate(outputCanvas.width, 0);
-      outCtx.scale(-1, 1);
-      outCtx.drawImage(res.image, 0, 0, outputCanvas.width, outputCanvas.height);
-      outCtx.restore();
-
-      if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
-        const lm = res.multiFaceLandmarks[0];
-        const multiRoi = extractMultiRoiBounding(lm);
-        const rawVal = extractSkinChromSignal(multiRoi);
-
-        const isInsideSilhouette = checkInsideSilhouette(lm);
-
-        const noseX = lm[1].x * outputCanvas.width;
-        const noseY = lm[1].y * outputCanvas.height;
-
-        let motionDistance = 0;
-        if (lastNoseX !== null && lastNoseY !== null) {
-          const dx = noseX - lastNoseX;
-          const dy = noseY - lastNoseY;
-          motionDistance = Math.sqrt(dx * dx + dy * dy);
-        }
-        lastNoseX = noseX;
-        lastNoseY = noseY;
-
-        const isExcessiveMotion = motionDistance > 2.8;
-
-        if (!isInsideSilhouette) {
-          document.getElementById('silhouetteSvg').style.stroke = '#f59e0b';
-          if (isScanning) {
-            document.getElementById('guideHint').innerText = '枠外逸脱：シルエットの内側に顔を収めてください';
-            document.getElementById('stateVal').innerText = '枠外待機中';
-          } else {
-            document.getElementById('guideHint').innerText = 'シルエットの内側に顔を収めてください';
-          }
-        } else if (isExcessiveMotion) {
-          document.getElementById('silhouetteSvg').style.stroke = '#f43f5e';
-          if (isScanning) {
-            document.getElementById('guideHint').innerText = '体動検知：頭の揺れを抑えて静止してください';
-            document.getElementById('stateVal').innerText = '同期待機中';
-          }
-        } else {
-          document.getElementById('silhouetteSvg').style.stroke = '#10b981';
-          if (!isScanning) {
-            document.getElementById('guideHint').innerText = '顔を検出中：位置を調整し「計測開始」を押してください';
-            document.getElementById('measureBtn').disabled = false;
-          }
-        }
-
-        if (rawVal !== null && isScanning) {
-          const now = performance.now();
-
-          if (bp_x1 === 0 && bp_y1 === 0) {
-            bp_x1 = rawVal; bp_x2 = rawVal;
-            bp_y1 = rawVal; bp_y2 = rawVal;
-          }
-
-          const filtered = applyBandpassFilter(rawVal);
-
-          if (isWarmingUp) {
-            accumulatedValidFrames++;
-            if (accumulatedValidFrames > 25) {
-              isWarmingUp = false;
-              accumulatedValidFrames = 0;
-              document.getElementById('stateVal').innerText = '解析中';
-              document.getElementById('guideHint').innerText = '計測中：画面を自然に見つめてください';
-            }
-            return;
-          }
-
-          // 不適格フレーム（枠外・過大体動）は厳密に遮断・蓄積しない
-          if (!isInsideSilhouette || isExcessiveMotion) {
-            return;
-          }
-
-          // 安定したクリーンフレームのみ蓄積
-          accumulatedValidFrames++;
-          rawSignals.push(filtered);
-          timestamps.push(now);
-
-          drawHighContrastPulseOverlay(multiRoi, filtered);
-          const specResult = drawAmplitudeSpectrum(rawSignals, timestamps);
-          
-          if (specResult && specResult.snrDb) {
-            document.getElementById('snrVal').innerText = `${specResult.snrDb} dB`;
-            
-            // SNRが一定水準（2.5dB）以上の安定時のみ心拍数を表示（誤検出数値を排除）
-            if (specResult.snrNum >= 2.5 && specResult.estimatedBpm) {
-              document.getElementById('bpmVal').innerText = `${specResult.estimatedBpm} 拍/分`;
-              document.getElementById('stateVal').innerText = '信号ロック中';
-            } else {
-              document.getElementById('bpmVal').innerText = '--';
-              document.getElementById('stateVal').innerText = '信号同調中';
-            }
-          }
-
-          document.getElementById('guideHint').innerText = 'クリーン信号を取得中：安定しています';
-
-          const pct = Math.min(100, Math.round((accumulatedValidFrames / targetValidFrames) * 100));
-          document.getElementById('progressBar').style.width = pct + '%';
-
-          if (accumulatedValidFrames >= targetValidFrames) {
-            completeScanSession();
-          }
-        }
-      } else {
-        document.getElementById('silhouetteSvg').style.stroke = 'rgba(56, 189, 248, 0.45)';
-        if (!isScanning && isCameraReady) {
-          document.getElementById('guideHint').innerText = '枠内に顔を合わせてください';
-        }
-      }
-    });
-
-    async function startCameraOnly() {
-      const camBtn = document.getElementById('cameraBtn');
-      camBtn.disabled = true;
-      camBtn.innerText = 'カメラを起動中...';
-
-      try {
-        if (!cameraInstance) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-            audio: false
-          });
-          videoElement.srcObject = stream;
-          await videoElement.play();
-
-          outputCanvas.width = 640;
-          outputCanvas.height = 480;
-          specCanvas.width = 380;
-          specCanvas.height = 125;
-
-          cameraInstance = new Camera(videoElement, {
-            onFrame: async () => { await faceMesh.send({ image: videoElement }); },
-            width: 640, height: 480
-          });
-          await cameraInstance.start();
-        }
-
-        isCameraReady = true;
-        camBtn.innerText = 'カメラ起動済み（位置調整中）';
-        document.getElementById('guideHint').innerText = '枠内に顔を合わせ、静止したら計測開始を押してください';
-        document.getElementById('measureBtn').disabled = false;
-      } catch (err) {
-        alert("カメラの起動に失敗しました。カメラの利用権限を許可してください。");
-        camBtn.disabled = false;
-        camBtn.innerText = 'カメラを起動して位置を合わせる';
-      }
-    }
-
-    function startMeasurementOnly() {
-      if (!isCameraReady || isScanning) return;
-
-      const measureBtn = document.getElementById('measureBtn');
-      measureBtn.disabled = true;
-      measureBtn.innerText = `生体データを計測中（${currentModeSeconds}秒間、静止してください）...`;
-
-      resetEnvironment();
-      measureBtn.disabled = true;
-      measureBtn.innerText = `生体データを計測中（${currentModeSeconds}秒間、静止してください）...`;
-
-      document.getElementById('progressContainer').style.display = 'block';
-      document.getElementById('progressBar').style.width = '0%';
-      document.getElementById('scanLine').style.display = 'block';
-      document.getElementById('pulseIndicator').style.display = 'block';
-      document.getElementById('stateVal').innerText = '同調待機中';
-      document.getElementById('guideHint').innerText = '計測開始：信号を同期中...動かずに静止してください';
-
-      rawSignals.length = 0;
-      timestamps.length = 0;
-      accumulatedValidFrames = 0;
-
-      isWarmingUp = true;
-      isScanning = true;
-    }
-
-    async function completeScanSession() {
-      isScanning = false;
-      document.getElementById('progressBar').style.width = '100%';
-      document.getElementById('scanLine').style.display = 'none';
-      document.getElementById('pulseIndicator').style.display = 'none';
-      
-      const measureBtn = document.getElementById('measureBtn');
-      measureBtn.innerText = 'AIが日次バイタル推移を深層解析中...';
-
-      const m = analyzeBiometrics();
-      const specResult = drawAmplitudeSpectrum(rawSignals, timestamps);
-      const currentSnr = specResult.snrDb || "3.8";
-
-      document.getElementById('bpmVal').innerText = m.bpm + ' 拍/分';
-      document.getElementById('hrvVal').innerText = m.hrv + ' ms';
-      document.getElementById('snrVal').innerText = `${currentSnr} dB`;
-
-      let aiResult = null;
-
-      try {
-        aiResult = await requestCloudAiViaWorker(m, currentSnr);
-      } catch (e) {
-        console.warn('Worker通信失敗・ローカル動的フォールバック実行:', e);
-      }
-
-      if (!aiResult) {
-        const isStressed = m.hrv < 38 || m.bpm > 90;
-        const isDrowsy = m.hrv > 58 && m.bpm < 68;
-        const theme = isStressed ? 'amber' : (isDrowsy ? 'cyan' : 'emerald');
-
-        aiResult = {
-          theme: theme,
-          toolName: theme === 'amber' ? '交感神経抑制制御' : (theme === 'cyan' ? '覚醒水準補正制御' : 'コヒーレンス維持制御'),
-          actionList: [
-            `画面配色を${theme.toUpperCase()}モードへ適応変更`,
-            '生体フィードバック触覚振動を実行'
-          ],
-          stateLabel: theme === 'amber' ? '交感神経過緊張' : (theme === 'cyan' ? '覚醒水準減退' : '自律神経至適共鳴'),
-          stateNote: theme === 'amber' ? '活動水準上昇または過積載による心拍上昇状態' : (theme === 'cyan' ? '中枢性疲労による強い眠気' : '高い集中力を維持したゾーン状態'),
-          equivLabel: theme === 'amber' ? '活動直後または緊迫した対応相当' : (theme === 'cyan' ? '長時間の単調作業による弛緩相当' : '深い没入作業相当'),
-          clinicalParams: {
-            svr: theme === 'amber' ? '上昇傾向（末梢血管収縮）' : (theme === 'cyan' ? '低下傾向（末梢弛緩）' : '標準域（灌流安定）'),
-            coherence: theme === 'amber' ? '低（不整変動）' : (theme === 'cyan' ? '中（徐波優位）' : '高（同調状態）'),
-            snrAssessment: `${currentSnr} dB（信号品質指標: 良好）`
-          },
-          vitalTrend: `心拍数${m.bpm}bpm、HRV${m.hrv}msを記録。クリーンデータ抽出処理を経た実測推移を捉えています。`,
-          discrepancy: `実測心拍数${m.bpm}bpmに対しHRVが${m.hrv}msを記録。安定した光学シグナルから客観的な生理状態を判定しました。`,
-          discrepancyNote: '安定化フレームから高精度な生体シグナルを検出しました。',
-          focusLimitMins: theme === 'amber' ? 10 : (theme === 'cyan' ? 8 : 35),
-          timeline: theme === 'amber' ? [
-            `開始5分後：心拍昂進に伴う呼吸促迫とタイピング入力の誤タッチ`,
-            `開始12分後：視野狭窄に伴う画面端の重要情報の見落とし`,
-            `開始20分後：ワーキングメモリ枯渇による再確認ループの多発`
-          ] : (theme === 'cyan' ? [
-            `開始6分後：瞬き頻度の半減によるマイクロスリープの発生`,
-            `開始14分後：同じテキスト行を何度も読み返す認知停滞`,
-            `開始20分後：姿勢の前傾固定化と注意力の完全な散漫化`
-          ] : [
-            `開始20分後：ゾーン状態の持続による緩やかな疲労蓄積`,
-            `開始35分後：僧帽筋周辺の微小な筋緊張の自覚`,
-            `開始45分後：集中力ピークの下降と休息推奨ゾーン突入`
-          ]),
-          prescription: theme === 'amber' ? {
-            title: '呼吸性不整脈を活用した迷走神経刺激呼吸',
-            reason: `心拍数${m.bpm}bpmと交感神経が優位であるため、呼気延長による副交感神経刺激が有効です。`,
-            actionSteps: [
-              '背もたれに深く体重を預け、息を4秒吸って8秒かけて完全に吐き切る',
-              '冷たい水で口をゆすぐ、または手のひらを物理的に冷却する'
-            ],
-            avoidAction: 'カフェインの追加摂取、作業の強行'
-          } : (theme === 'cyan' ? {
-            title: '立ち上がり大腿四頭筋ストレッチと遠方視覚順応',
-            reason: `BPM${m.bpm}と覚醒水準が低下しているため、大筋群の収縮と視覚刺激による中枢覚醒が必要です。`,
-            actionSteps: [
-              '椅子から完全に立ち上がり、その場で足踏みまたは屈伸を10回行う',
-              '5メートル以上離れた遠くの対象を20秒間凝視する'
-            ],
-            avoidAction: '座ったまま画面を見つめ続けること'
-          } : {
-            title: '現在の作業セッションを20分間で完遂',
-            reason: '自律神経が至適状態にあるため、現在のタスクを区切りの良いところまで進めるのが最適です。',
-            actionSteps: [
-              '一口の水分を補給し、現在の優先タスクに集中する',
-              '20分後にアラームを設定し、そこで一旦作業を打ち切る'
-            ],
-            avoidAction: '突然の長時間休憩による集中ゾーンの中断'
-          })
-        };
-      }
-
-      const now = new Date();
-      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      saveVitalRecord({
-        date: dateStr,
-        bpm: m.bpm,
-        hrv: m.hrv,
-        snr: currentSnr,
-        stateLabel: aiResult.stateLabel,
-        mode: currentModeSeconds
-      });
-
-      document.getElementById('logRecordedTime').innerText = dateStr;
-      document.getElementById('logRecordedBody').innerHTML = `
-        計測日時: <b>${dateStr}</b> (${currentModeSeconds}秒スキャン)<br>
-        測定結果: 心拍数 <b>${m.bpm}</b> bpm / HRV <b>${m.hrv}</b> ms / 信号品質 <b>${currentSnr}</b> dB<br>
-        AI診断状態: <b>${aiResult.stateLabel}</b> (${aiResult.equivLabel})
-      `;
-      document.getElementById('recordedLogCard').style.display = 'block';
-
-      document.getElementById('stateVal').innerText = aiResult.stateLabel;
-      document.getElementById('stateNoteDisplay').innerText = aiResult.stateNote || '自律神経の傾き';
-
-      AutonomousTools.applyDisplayTheme(aiResult.theme);
-      AutonomousTools.triggerHaptic();
-
-      const actionCard = document.getElementById('agentActionCard');
-      const actionList = document.getElementById('agentActionList');
-      document.getElementById('toolNameDisplay').innerText = aiResult.toolName;
-      actionList.innerHTML = aiResult.actionList.map(a => `・<strong>端末適応:</strong> ${a}`).join('<br>');
-      actionCard.style.display = 'block';
-
-      const reportCard = document.getElementById('reportCard');
-      const reportContent = document.getElementById('reportContent');
-      document.getElementById('reportTimestamp').innerText = now.toTimeString().split(' ')[0];
-
-      let timelineHtml = (aiResult.timeline || []).map(item => `<div class="timeline-item">・${item}</div>`).join('');
-      
-      const pres = aiResult.prescription || {
-        title: "5分間の休息",
-        reason: "疲労蓄積防止のため",
-        actionSteps: ["深呼吸を行う", "水分を補給する"],
-        avoidAction: "作業の強行"
-      };
-
-      let stepsHtml = (pres.actionSteps || []).map(s => `<li>${s}</li>`).join('');
-
-      const clin = aiResult.clinicalParams || {
-        svr: "判定中", coherence: "標準", snrAssessment: `${currentSnr} dB`
-      };
-
-      reportContent.innerHTML = `
-        <div class="report-section" style="color:#38bdf8; font-size:10px; margin-bottom:6px;">
-          【推論エンジン】Cloudflare Workers × Gemini 2.5 Flash 完全秘匿中継
-        </div>
-
-        <div class="report-section">
-          <strong>【日次バイタル推移とベースライン比較】</strong>
-          <div class="vital-trend-box">
-            ${aiResult.vitalTrend || '蓄積された過去データをもとに日々のバイタル推移を追従中。'}
-          </div>
-        </div>
-
-        <div class="report-section">
-          <strong>【血行動態・信号品質パラメータ (npj Digital Medicine 2026準拠)】</strong>
-          <div class="clinical-param-grid">
-            <div class="clinical-param-item">血管抵抗性(SVR): <b>${clin.svr}</b></div>
-            <div class="clinical-param-item">自律神経同調度: <b>${clin.coherence}</b></div>
-            <div class="clinical-param-item">スペクトルSNR: <b>${clin.snrAssessment}</b></div>
-            <div class="clinical-param-item">適応制御: <b>クリーンシグナル・ゲート稼働中</b></div>
-          </div>
-        </div>
-
-        <div class="report-section">
-          <strong>【外見と体内の矛盾分析 (Discrepancy Analysis)】</strong>
-          ${aiResult.discrepancy}
-          ${aiResult.discrepancyNote ? `<br><div class="section-note">要約：${aiResult.discrepancyNote}</div>` : ''}
-        </div>
-        <div class="report-section">
-          <strong>【体内負荷換算の目安】</strong>
-          現在の生体データは「${aiResult.equivLabel}」と同等の神経負荷です。
-        </div>
-        <div class="report-section">
-          <strong>【集中限界予測】</strong>
-          維持可能時間：残り <span style="font-weight:700; color:#38bdf8;">約${aiResult.focusLimitMins}分間</span>
-        </div>
-        <div class="report-section">
-          <strong>【作業継続時の破綻タイムライン予測】</strong>
-          <div class="timeline-box">
-            ${timelineHtml}
-          </div>
-        </div>
-
-        <div class="prescription-box">
-          <div class="prescription-title">推奨アクション：${pres.title}</div>
-          <div class="prescription-reason">【処方理由】${pres.reason}</div>
-          <ul class="prescription-steps">
-            ${stepsHtml}
-          </ul>
-          <div class="prescription-avoid">逆効果なNG行動：${pres.avoidAction}</div>
-        </div>
-
-        <div class="reference-box">
-          <span>【学術基準およびガイドライン参照】</span>
-          ・rPPG臨床トランスレーション基準：Elgendi et al. (2026) "Roadmap of remote photoplethysmography from heart rate measurement toward clinical translation" npj Digital Medicine準拠<br>
-          ・心拍変動解析基準（HRV/RMSSD）：Task Force of the ESC/NASPE (1996) 準拠<br>
-          ・クリーンシグナル・ゲーティング：幾何学的境界監視と顔面変位ベクトル解析準拠<br>
-          ・スペクトル解析・呼吸周波数同調：渡辺ら (2017) 電気関係学会東北支部連合大会準拠
-        </div>
-      `;
-      reportCard.style.display = 'block';
-
-      measureBtn.disabled = false;
-      measureBtn.innerText = `再度、${currentModeSeconds}秒間の生体計測を開始`;
-      document.getElementById('resetEnvBtn').style.display = 'block';
-      document.getElementById('progressContainer').style.display = 'none';
-      document.getElementById('guideHint').innerText = '診断が完了しました。再計測可能です。';
     }
 
     window.addEventListener('DOMContentLoaded', () => {
-      updateHistoryUI();
+      updateRankingUI();
     });
   </script>
 </body>
